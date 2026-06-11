@@ -4,10 +4,10 @@ This is a mirror of the CRAN R package https://cran.r-project.org/web/packages/R
 ## Installation
 
 ```r
-# From CRAN (stable):
+# From CRAN:
 install.packages("RCtest")
 
-# From GitHub (development version):
+# From GitHub:
 # install.packages("remotes")
 remotes::install_github("YOUR_USERNAME/RCtest")
 ```
