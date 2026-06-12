@@ -1,6 +1,8 @@
 # RCtest
 R package for forecast evaluation
-This is a mirror of the CRAN R package https://cran.r-project.org/web/packages/RCtest/index.html
+This repository contains the development version of the RCtest package.
+The stable release is available on CRAN: <https://cran.r-project.org/package=RCtest>.
+
 ## Installation
 
 ```r
@@ -9,7 +11,7 @@ install.packages("RCtest")
 
 # From GitHub:
 # install.packages("remotes")
-remotes::install_github("YOUR_USERNAME/RCtest")
+remotes::install_github("JoannaJedrzejewska/RCtest")
 ```
 
 ## Tests implemented
