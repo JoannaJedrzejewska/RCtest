@@ -47,7 +47,8 @@ data(metals)
 benchmark_col      <- 15
 K_total            <- ncol(metals)
 comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
-forecast_variance  <- estimate_forecast_variance(metals,
+realized           <- metals[, benchmark_col]
+forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
                         benchmark_col = benchmark_col)
 forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
 klic_loss <- compute_klic(metals, forecast_sd_models,

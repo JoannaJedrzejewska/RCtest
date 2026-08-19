@@ -369,7 +369,7 @@ superior_predictive_ability_test <- function(loss_differences, block_length,
   K    <- ncol(loss_differences)
   SP_k <- colMeans(loss_differences, na.rm = TRUE)
   V_hat_full <- estimate_long_run_covariance(loss_differences, block_length)
-  V_k        <- diag(V_hat_full) / P
+  V_k        <- diag(V_hat_full)
   V_k[V_k <= 1e-10] <- 1e-10
   std_dev_k  <- sqrt(V_k)
   
@@ -580,7 +580,7 @@ white_reality_check_conditional <- function(loss_differences, weighting_vector,
   
   weighted_diff_series <- loss_differences * weighting_vector
   V_hat_full_h <- estimate_long_run_covariance(weighted_diff_series, block_length)
-  V_k_h        <- diag(V_hat_full_h) / P
+  V_k_h        <- diag(V_hat_full_h)
   V_k_h[V_k_h <= 1e-10] <- 1e-10
   std_dev_k_h  <- sqrt(V_k_h)
   
@@ -615,26 +615,37 @@ white_reality_check_conditional <- function(loss_differences, weighting_vector,
 }
 
 #' @title White's Reality Check via Expected Loss CDF Comparison (CDF-RC)
-#' 
-#'@description Implements a studentized Reality Check test that compares competing
+#'
+#' @description Implements a studentized Reality Check test that compares competing
 #' \strong{forecasts} against a benchmark across the entire distribution of loss
 #' differences, not only the mean. For each forecast \eqn{k} and each quantile
 #' threshold \eqn{x_\tau} (derived from the pooled empirical distribution of loss
-#' differences), the test evaluates
-#' whether the empirical CDF of \strong{forecast \eqn{k}'s} loss differences lies
-#' uniformly above that of the benchmark, indicating stochastic dominance of the
-#' benchmark's loss distribution over the \strong{forecast's} loss distribution.
+#' differences), the test evaluates whether the empirical CDF of \strong{forecast
+#' \eqn{k}'s} loss differences, evaluated at \eqn{x_{\tau_j}}, exceeds the nominal
+#' quantile level \eqn{\tau_j} itself -- i.e., whether the competing forecast falls
+#' below that threshold \emph{more often than expected} under a correctly calibrated
+#' loss distribution, indicating stochastic dominance of the competing forecast's
+#' loss distribution over the benchmark's.
+#'
 #' \strong{Hypotheses:}
 #' \itemize{
-#'   \item \strong{H0:} \eqn{\max_{k,j} E[\mathbf{1}(d_{k,t} \leq x_{\tau_j})] \leq 0}
+#'   \item \strong{H0:} \eqn{\max_{k,j}\big(E[\mathbf{1}(d_{k,t} \leq x_{\tau_j})] - \tau_j\big) \leq 0}
 #'     for all \eqn{k = 1,\ldots,K} and all quantile thresholds
-#'     \eqn{x_{\tau_j},\ j = 1,\ldots,J} -- no competing forecast has a uniformly higher
-#'     empirical CDF of loss differences than the benchmark at any evaluation point.
-#'   \item \strong{H1:} At least one competing forecast has a significantly higher
-#'     empirical CDF of loss differences than the benchmark at some quantile threshold
-#'     \eqn{x_{\tau_j}}, i.e., the benchmark is stochastically dominated in terms of
-#'     loss differences.
+#'     \eqn{x_{\tau_j},\ j = 1,\ldots,J} -- no competing forecast's empirical CDF of
+#'     loss differences exceeds its nominal quantile level \eqn{\tau_j} at any
+#'     evaluation point, i.e., no competing forecast is stochastically dominant
+#'     over the benchmark anywhere in the loss distribution.
+#'   \item \strong{H1:} At least one competing forecast's empirical CDF of loss
+#'     differences significantly exceeds its nominal quantile level \eqn{\tau_j} at
+#'     some threshold \eqn{x_{\tau_j}}, i.e., the benchmark is stochastically
+#'     dominated in terms of loss differences at that point.
 #' }
+#' Note that because \eqn{x_{\tau_j}} is itself defined as the \eqn{\tau_j}-quantile
+#' of the \emph{pooled} loss-difference distribution (across all \eqn{K} forecasts),
+#' each column's empirical CDF value \eqn{\bar G_{k,j}} is centred at \eqn{\tau_j}
+#' under a null of no systematic difference across forecasts -- \strong{not at
+#' zero}. The test statistic and its bootstrap null distribution are therefore
+#' constructed relative to \eqn{\tau_j}, not zero; see \dQuote{Details}.
 #'
 #' @param loss_differences A \code{\link[base]{numeric}} matrix (\code{P x K}) of loss
 #'   differences (benchmark loss minus forecast forecast loss), where \code{P} is the number of
@@ -650,16 +661,16 @@ white_reality_check_conditional <- function(loss_differences, weighting_vector,
 #' @param alpha \code{\link[base]{numeric}}. The significance level (default \code{0.05}).
 #'
 #' @details
-#' The test proceeds in three steps.
+#' The test proceeds in four steps.
 #'
-#' \strong{Step 1 — Quantile grid.} A grid of \eqn{J = 9} evaluation points
+#' \strong{Step 1 -- Quantile grid.} A grid of \eqn{J = 9} evaluation points
 #' \eqn{x_{\tau_1}, \ldots, x_{\tau_9}} is constructed as the
 #' \eqn{\tau_j \in \{0.1, 0.2, \ldots, 0.9\}} quantiles of the \emph{pooled}
 #' empirical distribution of all loss differences (across all forecasts and all periods).
 #' Using quantiles of the data rather than a fixed grid ensures that the evaluation
 #' points are always in the support of the observed loss differences.
 #'
-#' \strong{Step 2 — Indicator matrix.} For each forecast \eqn{k} and each threshold
+#' \strong{Step 2 -- Indicator matrix.} For each forecast \eqn{k} and each threshold
 #' \eqn{x_{\tau_j}}, the binary indicator
 #' \deqn{G_{k,j,t} = \mathbf{1}(d_{k,t} \leq x_{\tau_j})}
 #' is formed, where \eqn{d_{k,t}} is the loss difference for forecast \eqn{k} at
@@ -667,26 +678,40 @@ white_reality_check_conditional <- function(loss_differences, weighting_vector,
 #' with \eqn{K \times J = 14 \times 9 = 126} columns (for the \code{metals} dataset).
 #' The column mean \eqn{\bar{G}_{k,j} = \frac{1}{P}\sum_t G_{k,j,t}} estimates the
 #' empirical CDF of forecast \eqn{k}'s loss differences evaluated at \eqn{x_{\tau_j}}.
-#' A higher CDF value means a larger fraction of the forecast's loss differences fall
-#' below \eqn{x_{\tau_j}}, i.e., the competing forecast more frequently outperforms the 
-#' benchmark forecast (since a positive loss difference means the competing forecast is more accurate).
 #'
-#' \strong{Step 3 — Studentized test statistic.} Each column mean is studentized by
-#' its HAC standard deviation (from \code{\link{estimate_long_run_covariance}}),
-#' and the test statistic is the maximum studentized CDF indicator mean across all
-#' \eqn{K \times J} columns:
-#' \deqn{\hat{T} = \max_{k,j} \frac{\bar{G}_{k,j}}{\hat{\sigma}_{k,j}}}
+#' \strong{Step 3 -- Null-centring (\emph{critical for correct inference}).} Because
+#' \eqn{x_{\tau_j}} is defined as the \eqn{\tau_j}-quantile of the \emph{pooled}
+#' loss-difference sample, \eqn{\bar{G}_{k,j}} is mechanically close to \eqn{\tau_j}
+#' for every forecast \eqn{k} whenever forecasts are exchangeable under the null --
+#' it is \strong{not} centred at zero. The relevant test quantity is therefore the
+#' \emph{excess} empirical CDF over its nominal level,
+#' \deqn{\bar{G}_{k,j} - \tau_j,}
+#' which is genuinely centred at zero when no forecast is stochastically dominant.
+#' Studentizing the raw \eqn{\bar{G}_{k,j}} (without subtracting \eqn{\tau_j}) before
+#' comparing to a bootstrap distribution of \emph{deviations} from the observed
+#' statistic produces a test statistic and a null distribution on incompatible
+#' scales, and causes the test to reject in virtually all samples regardless of the
+#' data -- this was corrected in the current package version (see \dQuote{Note}).
+#'
+#' \strong{Step 4 -- Studentized test statistic.} Each null-centred column mean is
+#' studentized by its HAC standard deviation (from
+#' \code{\link{estimate_long_run_covariance}}), and the test statistic is the
+#' maximum studentized excess CDF value across all \eqn{K \times J} columns:
+#' \deqn{\hat{T} = \max_{k,j} \frac{\bar{G}_{k,j} - \tau_j}{\hat{\sigma}_{k,j}}}
 #' Bootstrap p-values are obtained via the MBB of Kunsch (1989) with recentring,
-#' following the WRC procedure of White (2000) and Corradi & Swanson (2011).
+#' following the WRC procedure of White (2000) and Corradi & Swanson (2011); the
+#' same \eqn{\tau_j} offset is subtracted from each bootstrap replicate's column
+#' mean before studentizing, so that both the observed statistic and its bootstrap
+#' distribution are computed on the same, correctly null-centred scale.
 #'
 #' \strong{Relationship to Corradi & Swanson (2006).} This test is a loss-difference
 #' analogue of the predictive CDF comparison in Corradi & Swanson (2006, Section 4).
 #' Rather than comparing forecast CDFs against the true conditional distribution
 #' (as in the ZP test), it compares empirical CDFs of \emph{loss differences} against
-#' zero, assessing stochastic dominance of the benchmark over each competing forecast
-#' in terms of loss. It complements \code{\link{white_reality_check}} (which tests
-#' only the mean) by detecting cases where one forecast is better in the tails but
-#' not on average.
+#' their own nominal quantile levels, assessing stochastic dominance of a competing
+#' forecast over the benchmark in terms of loss. It complements
+#' \code{\link{white_reality_check}} (which tests only the mean) by detecting cases
+#' where one forecast is better in the tails but not on average.
 #'
 #' \strong{Lower p-values are more informative:} rejection of H0 indicates that at
 #' least one forecast stochastically dominates the benchmark at some point of the loss
@@ -694,23 +719,48 @@ white_reality_check_conditional <- function(loss_differences, weighting_vector,
 #' -- it means no single \eqn{(k,j)} combination is significant after controlling
 #' for multiple comparisons.
 #'
+#' @note
+#' \strong{Package versions prior to the current release contained two
+#' implementation errors in this function, both now corrected:}
+#' \enumerate{
+#'   \item \strong{Redundant variance division.}
+#'     \code{\link{estimate_long_run_covariance}} already divides its output by the
+#'     sample size internally; this function additionally divided
+#'     \code{diag(V_hat_full)} by \code{P_clean} a second time before studentizing,
+#'     inflating every studentized statistic by a factor of approximately
+#'     \eqn{\sqrt{P}}. This has been removed.
+#'   \item \strong{Missing null-centring.} As described in Step 3 above, the test
+#'     statistic and bootstrap null distribution were computed on incompatible
+#'     scales (raw empirical CDF values compared against a distribution of
+#'     deviations from those same values), causing the test to reject in
+#'     essentially 100\% of samples regardless of the data -- verified via an
+#'     isolated Monte Carlo check under a pure i.i.d. null with a single forecast
+#'     and a single quantile threshold. This function now subtracts the nominal
+#'     quantile level \eqn{\tau_j} from each column's empirical CDF before
+#'     studentizing, restoring rejection rates near the nominal significance level
+#'     under simulated null data.
+#' }
+#' Results obtained from this function in prior package versions should be treated
+#' as unreliable and are superseded by output from the current version.
+#'
 #' @return An object of class \code{"htest"} with the following components:
 #' \tabular{ll}{
-#'   \code{statistic}   \tab Maximum studentized CDF indicator mean across all
+#'   \code{statistic}   \tab Maximum studentized excess CDF value (empirical CDF
+#'                           minus nominal quantile level) across all
 #'                           \eqn{K \times J} forecast-quantile combinations,
 #'                           labelled \code{"KS-type"}. \cr
 #'   \code{p.value}     \tab Bootstrap p-value from the MBB procedure. \cr
 #'   \code{method}      \tab \code{"Expected Loss CDF Comparison Test"}. \cr
 #'   \code{null.value}  \tab Named scalar
-#'                           \code{"max studentized CDF indicator mean
-#'                           (benchmark minus forecast)"} = 0. \cr
+#'                           \code{"max studentized excess CDF value (empirical
+#'                           CDF minus nominal quantile level)"} = 0. \cr
 #'   \code{alternative} \tab Description of the alternative hypothesis. \cr
 #' }
 #' A small p-value (below \code{alpha}) leads to rejection of H0, indicating that
-#' at least one competing forecast has a significantly higher empirical CDF of loss
-#' differences than the benchmark at some quantile threshold -- i.e., the competing forecast
-#' more frequently produces smaller losses than the benchmark forecast in some region of the
-#' loss distribution.
+#' at least one competing forecast's empirical CDF of loss differences significantly
+#' exceeds its nominal quantile level at some threshold -- i.e., the competing
+#' forecast more frequently produces smaller losses than the benchmark forecast in
+#' some region of the loss distribution than would be expected by chance.
 #'
 #' @references
 #' Corradi, V., & Swanson, N. R. (2006). Predictive density and conditional
@@ -721,7 +771,7 @@ white_reality_check_conditional <- function(loss_differences, weighting_vector,
 #' Bootstrap tests: How many bootstraps?
 #' \emph{Econometric Reviews}, 19(1), 55--68.
 #' \doi{10.1080/07474930008800459}
-#' 
+#'
 #' White, H. (2000). A reality check for data snooping. \emph{Econometrica},
 #' 68(5), 1097--1126. \doi{10.1111/1468-0262.00152}
 #'
@@ -770,11 +820,13 @@ white_reality_check_cdf_approx <- function(loss_differences, block_length,
   x_tau_points  <- quantile(pooled_loss, probs = quantile_grid, na.rm = TRUE)
   J             <- length(x_tau_points)
   
-  G_data <- matrix(NA, nrow = P, ncol = K * J)
+  G_data      <- matrix(NA, nrow = P, ncol = K * J)
+  null_target <- numeric(K * J)
   for (k in 1:K) {
     for (j in 1:J) {
-      G_index          <- (k - 1) * J + j
-      G_data[, G_index] <- as.numeric(loss_differences[, k] <= x_tau_points[j])
+      G_index             <- (k - 1) * J + j
+      G_data[, G_index]   <- as.numeric(loss_differences[, k] <= x_tau_points[j])
+      null_target[G_index] <- quantile_grid[j]
     }
   }
   
@@ -783,22 +835,25 @@ white_reality_check_cdf_approx <- function(loss_differences, block_length,
   P_clean <- nrow(G_data)
   if (P_clean == 0) return(NULL)
   
-  S_mean     <- colMeans(G_data, na.rm = TRUE)
+  S_mean          <- colMeans(G_data, na.rm = TRUE)
+  S_mean_centered <- S_mean - null_target
+  
   V_hat_full <- estimate_long_run_covariance(G_data, block_length)
-  V_k_new    <- diag(V_hat_full) / P_clean
+  V_k_new    <- diag(V_hat_full)
   V_k_new[V_k_new <= 1e-10] <- 1e-10
   std_dev_k_new <- sqrt(V_k_new)
   
-  T_k_unscaled <- S_mean / std_dev_k_new
+  T_k_unscaled <- S_mean_centered / std_dev_k_new
   T_max_ks     <- max(T_k_unscaled)
   
   bootstrap_stats <- numeric(num_bootstrap_replications)
   for (b in 1:num_bootstrap_replications) {
-    boot_sample    <- mbb_resample_data(G_data, block_length)
-    boot_S_mean    <- colMeans(boot_sample, na.rm = TRUE)
-    boot_T_unscaled <- boot_S_mean / std_dev_k_new
-    boot_T_centered <- boot_T_unscaled - T_k_unscaled
-    bootstrap_stats[b] <- max(boot_T_centered, na.rm = TRUE)
+    boot_sample          <- mbb_resample_data(G_data, block_length)
+    boot_S_mean          <- colMeans(boot_sample, na.rm = TRUE)
+    boot_S_mean_centered <- boot_S_mean - null_target
+    boot_T_unscaled      <- boot_S_mean_centered / std_dev_k_new
+    boot_T_centered       <- boot_T_unscaled - T_k_unscaled
+    bootstrap_stats[b]    <- max(boot_T_centered, na.rm = TRUE)
   }
   
   p_value <- mean(bootstrap_stats > T_max_ks, na.rm = TRUE)
@@ -808,8 +863,8 @@ white_reality_check_cdf_approx <- function(loss_differences, block_length,
     p.value     = p_value,
     method      = "Expected Loss CDF Comparison Test",
     data.name   = deparse(substitute(loss_differences)),
-    null.value  = c("max studentized CDF indicator mean (benchmark minus forecast)" = 0),
-    alternative = "at least one competing forecast has a higher CDF of loss differences at some quantile threshold"
+    null.value  = c("max studentized excess CDF value (empirical CDF minus nominal quantile level)" = 0),
+    alternative = "at least one competing forecast's empirical CDF of loss differences exceeds its nominal quantile level at some threshold"
   )
   class(res) <- "htest"
   return(res)
@@ -885,8 +940,9 @@ white_reality_check_cdf_approx <- function(loss_differences, block_length,
 #' P                  <- nrow(metals)
 #' K_total            <- ncol(metals)
 #' K                  <- K_total - 1 # 14 competing forecasts
-#' forecast_variance  <- estimate_forecast_variance(metals, benchmark_col = K_total,
-#'                                                  window_size = 20)
+#' realized           <- metals[, benchmark_col]
+#' forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
+#'                         benchmark_col = benchmark_col, window_size = 20)
 #' comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
 #' forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
 #' nls_loss  <- compute_klic(metals, forecast_sd_models, benchmark_col = K_total)
@@ -899,7 +955,7 @@ kullback_leibler_test <- function(log_likelihood_differences, block_length,
   K          <- ncol(log_likelihood_differences)
   Mean_L_k   <- colMeans(log_likelihood_differences, na.rm = TRUE)
   V_hat_full <- estimate_long_run_covariance(log_likelihood_differences, block_length)
-  V_k        <- diag(V_hat_full) / P
+  V_k        <- diag(V_hat_full)
   V_k[V_k <= 1e-10] <- 1e-10
   std_dev_k  <- sqrt(V_k)
   
@@ -1009,8 +1065,9 @@ kullback_leibler_test <- function(log_likelihood_differences, block_length,
 #' P                  <- nrow(metals)
 #' K_total            <- ncol(metals)
 #' K                  <- K_total - 1 # 14 competing forecasts
-#' forecast_variance  <- estimate_forecast_variance(metals, benchmark_col = K_total,
-#'                                                  window_size = 20)
+#' realized           <- metals[, benchmark_col]
+#' forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
+#'                         benchmark_col = benchmark_col, window_size = 20)
 #' comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
 #' forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
 #' threshold_val      <- quantile(metals[, K_total], 0.05)
@@ -1025,7 +1082,7 @@ reality_check_zp_test <- function(zp_loss_differences, block_length,
   K          <- ncol(zp_loss_differences)
   SP_k       <- colMeans(zp_loss_differences, na.rm = TRUE)
   V_hat_full <- estimate_long_run_covariance(zp_loss_differences, block_length)
-  V_k        <- diag(V_hat_full) / P
+  V_k        <- diag(V_hat_full)
   V_k[V_k <= 1e-10] <- 1e-10
   std_dev_k  <- sqrt(V_k)
   

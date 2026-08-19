@@ -6,6 +6,7 @@
 \usage{
 estimate_forecast_variance(
   forecast_matrix,
+  realized,
   benchmark_col = ncol(forecast_matrix),
   window_size = 20
 )
@@ -15,8 +16,14 @@ estimate_forecast_variance(
 where \code{P} is the number of forecast periods and \code{K_total} is the total
 number of columns (competing forecasts plus the benchmark).}
 
+\item{realized}{\code{\link[base]{numeric}} vector of length \code{P} containing
+the realized (observed) outcome for each forecast period. Forecast errors are
+computed relative to this series, not relative to the benchmark forecast.}
+
 \item{benchmark_col}{Index or name of the benchmark column. Defaults to the last
-column.}
+column. Retained for column bookkeeping (the benchmark column of the returned
+matrix is set to zero) and is no longer used to define forecast errors (see
+\dQuote{Note} below).}
 
 \item{window_size}{\code{\link[base]{integer}} rolling window size. For the first
 \code{window_size} periods, the full available history is used instead (expanding
@@ -29,15 +36,18 @@ window). From period \code{window_size + 1} onwards, a rolling window of exactly
   \code{forecast_matrix}; the benchmark column contains zeros.
 }
 \description{
-Estimates forecast variance from historical forecast errors relative to
-the benchmark using a rolling window. Used to approximate the time-varying predictive
-standard deviation for each competing model forecast, required by \code{\link{compute_klic}},
-\code{\link{compute_zp}}, and \code{\link{compute_kupiec}}.
+Estimates forecast variance from each competing model's own
+historical forecast errors relative to the realized outcome, using a
+rolling window. Used to approximate the time-varying predictive standard
+deviation for each competing model forecast, required by
+\code{\link{compute_klic}}, \code{\link{compute_zp}}, and
+\code{\link{compute_kupiec}}.
 }
 \details{
-For each competing forecast \code{k} and period \code{t}, the forecast error is defined
-as \eqn{e_{t,k} = \text{benchmark}_t - \hat{y}_{t,k}}. The variance of these errors
-is estimated over a rolling window:
+For each competing forecast \code{k} and period \code{t}, the forecast error is
+defined as \eqn{e_{t,k} = y_t - \hat{y}_{t,k}}, where \eqn{y_t} is the realized
+outcome at period \code{t} and \eqn{\hat{y}_{t,k}} is model \code{k}'s point
+forecast. The variance of these errors is estimated over a rolling window:
 \itemize{
   \item If \code{t < window_size}: variance is computed over observations
     \code{1:t} (expanding window).
@@ -48,10 +58,40 @@ For \code{t = 1} the variance of a single observation is undefined (\code{NA}).
 Estimated variances that are \code{NA}, zero, or negative are replaced by
 \code{1e-6} to ensure numerical stability in downstream computations.
 The benchmark column in the returned matrix is set to zero throughout.
+
+The resulting \code{forecast_variance[t, k]} is intended for use as the
+variance parameter of a Gaussian predictive density
+\eqn{N(\hat{y}_{t,k}, \text{forecast\_variance}[t,k])} for model \code{k}
+at period \code{t}, as required by \code{\link{compute_klic}} (Negative
+Log-Likelihood Score) and \code{\link{compute_zp}} (tail probability
+calibration).
+}
+\note{
+\strong{Correction from earlier package versions.} Prior versions of this
+function computed forecast errors as \eqn{e_{t,k} = \text{benchmark}_t -
+\hat{y}_{t,k}}, i.e., the discrepancy between the benchmark's point
+forecast and model \code{k}'s point forecast, rather than each model's
+own error relative to the realized outcome. This quantity does not
+represent a valid predictive-uncertainty proxy: a model that disagrees
+with the benchmark by a constant, systematic offset would show
+spuriously low variance under the previous construction (interpreted as
+high confidence) regardless of that model's actual forecasting accuracy,
+while a model that agrees with the benchmark on average but fluctuates
+around it would show spuriously high variance. The current version
+instead computes each model's own rolling forecast-error variance
+relative to the realized outcome, which is the standard and
+statistically appropriate quantity for approximating model-specific
+predictive uncertainty under a Gaussian density assumption. This changes
+the \code{realized} argument from absent to required; calling code must
+be updated accordingly (see \code{\link{compute_klic}},
+\code{\link{compute_zp}}, and \code{\link{compute_kupiec}} examples,
+which have been updated to supply \code{realized} explicitly).
 }
 \examples{
 data(metals)
-forecast_variance <- estimate_forecast_variance(metals, benchmark_col = 15,
+realized <- metals[, 15]
+forecast_variance <- estimate_forecast_variance(metals, realized = realized,
+                                                benchmark_col = 15,
                                                 window_size = 20)
 head(forecast_variance)
 }

@@ -3,25 +3,33 @@ NULL
 
 #' @title Estimate Forecast Variance via Rolling Window
 #'
-#' @description Estimates forecast variance from historical forecast errors relative to
-#' the benchmark using a rolling window. Used to approximate the time-varying predictive
-#' standard deviation for each competing model forecast, required by \code{\link{compute_klic}},
-#' \code{\link{compute_zp}}, and \code{\link{compute_kupiec}}.
+#' @description Estimates forecast variance from each competing model's own
+#' historical forecast errors relative to the realized outcome, using a
+#' rolling window. Used to approximate the time-varying predictive standard
+#' deviation for each competing model forecast, required by
+#' \code{\link{compute_klic}}, \code{\link{compute_zp}}, and
+#' \code{\link{compute_kupiec}}.
 #'
 #' @param forecast_matrix \code{\link[base]{matrix}} of dimension \code{P x K_total},
 #'   where \code{P} is the number of forecast periods and \code{K_total} is the total
 #'   number of columns (competing forecasts plus the benchmark).
+#' @param realized \code{\link[base]{numeric}} vector of length \code{P} containing
+#'   the realized (observed) outcome for each forecast period. Forecast errors are
+#'   computed relative to this series, not relative to the benchmark forecast.
 #' @param benchmark_col Index or name of the benchmark column. Defaults to the last
-#'   column.
+#'   column. Retained for column bookkeeping (the benchmark column of the returned
+#'   matrix is set to zero) and is no longer used to define forecast errors (see
+#'   \dQuote{Note} below).
 #' @param window_size \code{\link[base]{integer}} rolling window size. For the first
 #'   \code{window_size} periods, the full available history is used instead (expanding
 #'   window). From period \code{window_size + 1} onwards, a rolling window of exactly
 #'   \code{window_size} observations is used.
 #'
 #' @details
-#' For each competing forecast \code{k} and period \code{t}, the forecast error is defined
-#' as \eqn{e_{t,k} = \text{benchmark}_t - \hat{y}_{t,k}}. The variance of these errors
-#' is estimated over a rolling window:
+#' For each competing forecast \code{k} and period \code{t}, the forecast error is
+#' defined as \eqn{e_{t,k} = y_t - \hat{y}_{t,k}}, where \eqn{y_t} is the realized
+#' outcome at period \code{t} and \eqn{\hat{y}_{t,k}} is model \code{k}'s point
+#' forecast. The variance of these errors is estimated over a rolling window:
 #' \itemize{
 #'   \item If \code{t < window_size}: variance is computed over observations
 #'     \code{1:t} (expanding window).
@@ -33,6 +41,34 @@ NULL
 #' \code{1e-6} to ensure numerical stability in downstream computations.
 #' The benchmark column in the returned matrix is set to zero throughout.
 #'
+#' The resulting \code{forecast_variance[t, k]} is intended for use as the
+#' variance parameter of a Gaussian predictive density
+#' \eqn{N(\hat{y}_{t,k}, \text{forecast\_variance}[t,k])} for model \code{k}
+#' at period \code{t}, as required by \code{\link{compute_klic}} (Negative
+#' Log-Likelihood Score) and \code{\link{compute_zp}} (tail probability
+#' calibration).
+#'
+#' @note
+#' \strong{Correction from earlier package versions.} Prior versions of this
+#' function computed forecast errors as \eqn{e_{t,k} = \text{benchmark}_t -
+#' \hat{y}_{t,k}}, i.e., the discrepancy between the benchmark's point
+#' forecast and model \code{k}'s point forecast, rather than each model's
+#' own error relative to the realized outcome. This quantity does not
+#' represent a valid predictive-uncertainty proxy: a model that disagrees
+#' with the benchmark by a constant, systematic offset would show
+#' spuriously low variance under the previous construction (interpreted as
+#' high confidence) regardless of that model's actual forecasting accuracy,
+#' while a model that agrees with the benchmark on average but fluctuates
+#' around it would show spuriously high variance. The current version
+#' instead computes each model's own rolling forecast-error variance
+#' relative to the realized outcome, which is the standard and
+#' statistically appropriate quantity for approximating model-specific
+#' predictive uncertainty under a Gaussian density assumption. This changes
+#' the \code{realized} argument from absent to required; calling code must
+#' be updated accordingly (see \code{\link{compute_klic}},
+#' \code{\link{compute_zp}}, and \code{\link{compute_kupiec}} examples,
+#' which have been updated to supply \code{realized} explicitly).
+#'
 #' @return \code{\link[base]{matrix}} of dimension \code{P x K_total} containing
 #'   estimated variances. Columns correspond to the same forecasts as
 #'   \code{forecast_matrix}; the benchmark column contains zeros.
@@ -42,30 +78,33 @@ NULL
 #'
 #' @examples
 #' data(metals)
-#' forecast_variance <- estimate_forecast_variance(metals, benchmark_col = 15,
+#' realized <- metals[, 15]
+#' forecast_variance <- estimate_forecast_variance(metals, realized = realized,
+#'                                                 benchmark_col = 15,
 #'                                                 window_size = 20)
 #' head(forecast_variance)
 #' @export
-estimate_forecast_variance <- function(forecast_matrix,
+estimate_forecast_variance <- function(forecast_matrix, realized,
                                        benchmark_col = ncol(forecast_matrix),
                                        window_size   = 20) {
   if (is.character(benchmark_col))
     benchmark_col <- which(colnames(forecast_matrix) == benchmark_col)
   if (length(benchmark_col) == 0)
     stop("The specified benchmark_col was not found in the matrix.")
+  if (length(realized) != nrow(forecast_matrix))
+    stop("'realized' must have length equal to nrow(forecast_matrix).")
   
   P          <- nrow(forecast_matrix)
   K_total    <- ncol(forecast_matrix)
   model_cols <- setdiff(seq_len(K_total), benchmark_col)
   K_models   <- length(model_cols)
   
-  benchmark         <- forecast_matrix[, benchmark_col]
   forecast_variance <- matrix(0, P, K_total)
   colnames(forecast_variance) <- colnames(forecast_matrix)
   
   for (i in seq_len(K_models)) {
     k      <- model_cols[i]
-    errors <- benchmark - forecast_matrix[, k]
+    errors <- realized - forecast_matrix[, k]
     for (t in seq_len(P)) {
       if (t < window_size) {
         forecast_variance[t, k] <- var(errors[1:t], na.rm = TRUE)
@@ -146,7 +185,8 @@ estimate_forecast_variance <- function(forecast_matrix,
 #' benchmark_col      <- 15
 #' K_total            <- ncol(metals)
 #' comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
-#' forecast_variance  <- estimate_forecast_variance(metals,
+#' realized           <- metals[, benchmark_col]
+#' forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
 #'                         benchmark_col = benchmark_col, window_size = 20)
 #' forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
 #' coverage_results   <- compute_kupiec(metals, forecast_sd_models,
@@ -258,7 +298,8 @@ compute_kupiec <- function(forecast_matrix, forecast_sd_models,
 #' benchmark_col      <- 15
 #' K_total            <- ncol(metals)
 #' comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
-#' forecast_variance  <- estimate_forecast_variance(metals,
+#' realized           <- metals[, benchmark_col]
+#' forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
 #'                         benchmark_col = benchmark_col)
 #' forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
 #' klic_loss <- compute_klic(metals, forecast_sd_models,
@@ -347,7 +388,8 @@ compute_klic <- function(forecast_matrix, forecast_sd_models,
 #' benchmark_col      <- 15
 #' K_total            <- ncol(metals)
 #' comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
-#' forecast_variance  <- estimate_forecast_variance(metals,
+#' realized           <- metals[, benchmark_col]
+#' forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
 #'                         benchmark_col = benchmark_col)
 #' forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
 #' threshold_val      <- quantile(metals[, benchmark_col], 0.10)
@@ -551,15 +593,21 @@ compute_per_model_statistics <- function(loss_differences, model_names,
     lrc     <- estimate_long_run_covariance(matrix(loss_k, ncol = 1),
                                             block_length = block_length)
     se_loss <- sqrt(as.numeric(lrc) / sum(!is.na(loss_k)))
-
+    
     if (!is.na(se_loss) && se_loss > 1e-9) {
       T_eff  <- sum(!is.na(loss_k))
       DM     <- mean_loss / se_loss * sqrt((T_eff + 1 - 2 * h + (1 / T_eff) * h * (h - 1)) / T_eff)
       t_stat <- DM
-      if (H1 == "same") { p_value <- 2 * min(pt(q = DM, df = T_eff - 1, lower.tail = FALSE),
-                                             1 - pt(q = DM, df = T_eff - 1, lower.tail = FALSE)) }
-      if (H1 == "less") { p_value <- pt(q = DM, df = T_eff - 1, lower.tail = FALSE) }
-      if (H1 == "more") { p_value <- 1 - pt(q = DM, df = T_eff - 1, lower.tail = FALSE) }
+
+      if (H1 == "same") {
+        p_value <- 2 * pt(q = -abs(DM), df = T_eff - 1)
+      }
+      if (H1 == "more") {
+        p_value <- pt(q = DM, df = T_eff - 1, lower.tail = FALSE)
+      }
+      if (H1 == "less") {
+        p_value <- pt(q = DM, df = T_eff - 1, lower.tail = TRUE)
+      }
     } else {
       t_stat  <- NA
       p_value <- NA
@@ -593,6 +641,11 @@ compute_per_model_statistics <- function(loss_differences, model_names,
       }
     } else {
       NA_real_
+    }
+    
+    if (!is.na(p_value_boot)) {
+      r <- round(p_value_boot * n_boot)
+      p_value_boot <- (r + 1) / (n_boot + 1)
     }
     
     per_model_results[[model_name]] <- data.frame(

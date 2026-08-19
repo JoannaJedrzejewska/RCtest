@@ -241,9 +241,10 @@ run_comprehensive_erc_analysis <- function(data_list_prepared, mods_matrix, alph
     
     if (is.null(forecasts) || nrow(forecasts) != length(realizations_raw)) next
     
-    forecast_var       <- estimate_forecast_variance(forecasts,
-                                                     benchmark_col = bench_idx,
-                                                     window_size   = window_size)
+    forecast_var <- estimate_forecast_variance(forecasts,
+                                               realized      = realizations_raw,
+                                               benchmark_col = bench_idx,
+                                               window_size   = window_size)
     forecast_sd_models <- sqrt(forecast_var[, comp_cols, drop = FALSE])
     forecast_sd_benchmark <- sqrt(forecast_var[, bench_idx])
     benchmark_series   <- forecasts[, bench_idx]
@@ -285,7 +286,7 @@ run_comprehensive_erc_analysis <- function(data_list_prepared, mods_matrix, alph
             )
           }
         }
-  
+        
         bench_crps <- numeric(nrow(forecasts))
         for (t in seq_len(nrow(forecasts))) {
           bench_crps[t] <- compute_crps(
@@ -321,7 +322,6 @@ run_comprehensive_erc_analysis <- function(data_list_prepared, mods_matrix, alph
   return(list(aggregate_results  = all_results,
               per_model_results   = all_per_model_results))
 }
-
 #' @title Flatten Results for Export
 #'
 #' @description Prepares the comprehensive results list for export (e.g., to Microsoft
