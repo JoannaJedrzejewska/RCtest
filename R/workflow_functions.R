@@ -504,6 +504,11 @@ create_unified_summary <- function(comprehensive_results, alpha = 0.05) {
       return(NA)
     }
     if (is.na(val) || !is.numeric(val)) return(NA)
+    
+    if (field_name == "p_value") {
+      return(as.numeric(val))
+    }
+    
     return(round(as.numeric(val), 4))
   }
   
@@ -526,7 +531,7 @@ create_unified_summary <- function(comprehensive_results, alpha = 0.05) {
           p_val      <- safe_extract(res_obj, "p_value")
           stat_val   <- safe_extract(res_obj, "test_statistic")
           conclusion <- if (!is.na(p_val)) {
-            if (p_val <= alpha) "H0 rejected" else "H0 accepted"
+            if (p_val <= alpha) "H0 rejected" else "Fail to reject H0"
           } else "Insufficient data"
           
           all_summaries[[paste0(dataset_name, "_", test_name)]] <- data.frame(
@@ -537,11 +542,15 @@ create_unified_summary <- function(comprehensive_results, alpha = 0.05) {
           
           if (startsWith(test_name, "Superior_Predictive_Ability_") &&
               !is.null(res_obj$p_conservative)) {
-            p_cons     <- round(as.numeric(res_obj$p_conservative), 4)
-            conc_cons  <- if (!is.na(p_cons)) {
-              if (p_cons <= alpha) "H0 rejected" else "H0 accepted"
+            
+            p_cons <- as.numeric(res_obj$p_conservative)
+            
+            conc_cons <- if (!is.na(p_cons)) {
+              if (p_cons <= alpha) "H0 rejected" else "Fail to reject H0"
             } else "Insufficient data"
-            test_cons  <- paste0(test_name, "_Conservative")
+            
+            test_cons <- paste0(test_name, "_Conservative")
+            
             all_summaries[[paste0(dataset_name, "_", test_cons)]] <- data.frame(
               Dataset = dataset_name, Test = test_cons,
               P_Value = p_cons, Statistic = stat_val,
@@ -551,17 +560,20 @@ create_unified_summary <- function(comprehensive_results, alpha = 0.05) {
         }
       }
     }
+    
     dist_tests <- c("ZP", "Kullback_Leibler", "Cumulative_Distribution_Function")
+    
     for (test_name in dist_tests) {
       if (test_name %in% names(dataset_results)) {
         res_obj <- dataset_results[[test_name]]
         p_val   <- safe_extract(res_obj, "p_value")
+        
         all_summaries[[paste0(dataset_name, "_", test_name)]] <- data.frame(
           Dataset          = dataset_name,
           Test             = test_name,
           P_Value          = p_val,
           Statistic        = safe_extract(res_obj, "test_statistic"),
-          Conclusion       = if (!is.na(p_val)) (if (p_val <= alpha) "H0 rejected" else "H0 accepted") else "N/A",
+          Conclusion       = if (!is.na(p_val)) (if (p_val <= alpha) "H0 rejected" else "Fail to reject H0") else "N/A",
           stringsAsFactors = FALSE
         )
       }
@@ -569,11 +581,12 @@ create_unified_summary <- function(comprehensive_results, alpha = 0.05) {
   }
   
   if (length(all_summaries) == 0) return(list(summary = data.frame()))
+  
   final_summary_df           <- do.call(rbind, all_summaries)
   rownames(final_summary_df) <- NULL
+  
   return(list(summary = final_summary_df))
 }
-
 #' @title Generate Comprehensive Markdown Report
 #'
 #' @description Generates an automatic summary report in Markdown format covering all
@@ -711,7 +724,14 @@ generate_comprehensive_report <- function(summary_df, zp_models_df, klic_models_
   
   safe_format <- function(val) {
     if (length(val) == 0 || is.na(val[1])) return("N/A")
-    return(format(round(as.numeric(val[1]), 4), scientific = FALSE))
+    
+    p <- as.numeric(val[1])
+    
+    if (p < 0.0001) {
+      return("p < 0.0001")
+    }
+    
+    return(paste0("p = ", formatC(p, format = "f", digits = 4)))
   }
   
   get_conc <- function(p) {
@@ -732,9 +752,9 @@ generate_comprehensive_report <- function(summary_df, zp_models_df, klic_models_
     spa_p <- summary_data$P_Value[summary_data$Test == paste0("Superior_Predictive_Ability_",    m)]
     cpa_p <- summary_data$P_Value[summary_data$Test == paste0("Conditional_Predictive_Ability_", m)]
     
-    report <- paste0(report, "* **White's Reality Check (WRC):** H0 ",          get_conc(wrc_p), " (P-Value: ", safe_format(wrc_p), ")\n")
-    report <- paste0(report, "* **Superior Predictive Ability (SPA):** H0 ",     get_conc(spa_p), " (P-Value: ", safe_format(spa_p), ")\n")
-    report <- paste0(report, "* **Conditional Predictive Ability (CPA):** H0 ", get_conc(cpa_p), " (P-Value: ", safe_format(cpa_p), ")\n\n")
+    report <- paste0(report, "* **White's Reality Check (WRC):** H0 ",          get_conc(wrc_p), " (", safe_format(wrc_p), ")\n")
+    report <- paste0(report, "* **Superior Predictive Ability (SPA):** H0 ",     get_conc(spa_p), " (", safe_format(spa_p), ")\n")
+    report <- paste0(report, "* **Conditional Predictive Ability (CPA):** H0 ", get_conc(cpa_p), " (", safe_format(cpa_p), ")\n\n")
   }
   
   report <- paste0(report, "---\n### 2. Pairwise & Distributional Evaluation\n\n")
@@ -744,7 +764,7 @@ generate_comprehensive_report <- function(summary_df, zp_models_df, klic_models_
   
   report <- paste0(report, "#### **ZP Quantile Test** (Corradi & Swanson, 2006)\n")
   if (length(zp_p) > 0 && !is.na(zp_p[1])) {
-    report <- paste0(report, "* H0: ", get_conc(zp_p), " (P-Value: ", safe_format(zp_p), ")\n")
+    report <- paste0(report, "* H0: ", get_conc(zp_p), " (", safe_format(zp_p), ")\n")
   } else {
     report <- paste0(report, "* P-Value: N/A\n")
   }
@@ -762,7 +782,7 @@ generate_comprehensive_report <- function(summary_df, zp_models_df, klic_models_
   
   report <- paste0(report, "#### **Kullback-Leibler Information Criterion (KLIC)** (Corradi & Swanson, 2006)\n")
   if (length(klic_p) > 0 && !is.na(klic_p[1])) {
-    report <- paste0(report, "* H0: ", get_conc(klic_p), " (P-Value: ", safe_format(klic_p), ")\n")
+    report <- paste0(report, "* H0: ", get_conc(klic_p), " (", safe_format(klic_p), ")\n")
   } else {
     report <- paste0(report, "* P-Value: N/A\n")
   }
@@ -795,5 +815,4 @@ generate_comprehensive_report <- function(summary_df, zp_models_df, klic_models_
   }
   
   return(report)
-
 }
