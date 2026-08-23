@@ -1,0 +1,2 @@
+"Benchmark","Realized_Series","Competing_Models","Bootstrap_Replications","Tests","Allocation_Metric","Total_Bytes","Approx_MB"
+"AR_1","HA",13,999,"WRC + SPA + CPA","Total bytes allocated during one complete battery call",66339408,66.34
