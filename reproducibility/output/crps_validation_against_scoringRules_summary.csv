@@ -1,0 +1,2 @@
+"N_Configurations","Predictive_Sample_Size","Maximum_Absolute_Difference","Maximum_Relative_Difference_Pct","Mean_Relative_Difference_Pct","Interpretation"
+4,20000,0.0217973149429433,1.79527492653192,0.879302624137763,"Monte Carlo approximation of analytic Gaussian CRPS; not a model-specific-density validation."

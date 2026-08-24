@@ -1,0 +1,3 @@
+"Input_Type","N_Values","Mean_Input","Input_SD","Mean_Absolute_Distance_To_Realized","RCtest_CRPS","Interpretation"
+"Genuine predictive sample from one Gaussian model",20000,9.99157349995621,1.51016517226368,1.21087478966573,0.357182929974375,"Conventional sample-based CRPS for one specified predictive distribution."
+"Cross-model point-forecast ensemble (disagreement proxy)",8,10.15,2.0708866286138,1.55,0.45625,"Ensemble-disagreement proxy; not a model-specific predictive distribution."
