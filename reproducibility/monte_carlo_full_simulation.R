@@ -1,3 +1,21 @@
+# =============================================================================
+# monte_carlo_full_simulation.R
+#
+# Monte Carlo size and power assessment for RCtest routines.
+#
+# Joint tests:
+#   WRC, SPA, CPA, KLIC, ZP, CDF-RC
+# report the fraction of Monte Carlo replications rejecting at alpha.
+#
+# Per-model tests:
+#   DM_mean_rejection_rate and Kupiec_mean_rejection_rate report the average
+#   fraction of individual model tests rejecting across MC replications.
+# They are not family-wise "any rejection" probabilities.
+#
+# The loss-differential DGP has null and alternative cases. The Kupiec DGP
+# separately has calibrated and deliberately miscalibrated VaR scenarios.
+# =============================================================================
+
 library(RCtest)
 
 set.seed(20260819)
@@ -5,13 +23,13 @@ set.seed(20260819)
 output_dir <- file.path("reproducibility", "output")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-n_mc <- 200L
-n_boot <- 999L
+n_mc <- 500L
+n_boot <- 499L
 alpha <- 0.05
 K_models <- 5L
 
 # -----------------------------------------------------------------------------
-# Data-generating processes
+# Generic AR(1) loss-differential DGP
 # -----------------------------------------------------------------------------
 
 simulate_loss_differentials <- function(
@@ -19,8 +37,13 @@ simulate_loss_differentials <- function(
     phi,
     correlated,
     heteroskedastic,
+    alternative_means = rep(0, K_models),
     K = K_models
 ) {
+  if (length(alternative_means) != K) {
+    stop("alternative_means must have length K.")
+  }
+  
   if (correlated) {
     rho <- 0.5
     sigma_matrix <- matrix(rho, nrow = K, ncol = K)
@@ -30,11 +53,15 @@ simulate_loss_differentials <- function(
     cholesky_factor <- diag(K)
   }
   
-  shocks <- matrix(rnorm(P * K), nrow = P, ncol = K) %*% cholesky_factor
+  shocks <- matrix(
+    rnorm(P * K),
+    nrow = P,
+    ncol = K
+  ) %*% cholesky_factor
   
   if (heteroskedastic) {
-    scale <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
-    shocks <- shocks * scale
+    innovation_scale <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
+    shocks <- shocks * innovation_scale
   }
   
   loss_differences <- matrix(0, nrow = P, ncol = K)
@@ -45,10 +72,15 @@ simulate_loss_differentials <- function(
     series[1] <- innovation[1]
     
     for (time_index in 2:P) {
-      series[time_index] <- phi * series[time_index - 1] + innovation[time_index]
+      series[time_index] <- (
+        phi * series[time_index - 1] +
+          innovation[time_index]
+      )
     }
     
-    loss_differences[, model_index] <- series
+    loss_differences[, model_index] <- (
+      series + alternative_means[model_index]
+    )
   }
   
   colnames(loss_differences) <- paste0("M", seq_len(K))
@@ -56,13 +88,30 @@ simulate_loss_differentials <- function(
   loss_differences
 }
 
+# -----------------------------------------------------------------------------
+# VaR / Kupiec DGP
+#
+# Under kupiec_miscalibration = 1 and heteroskedastic = FALSE, the supplied
+# forecast SD equals the AR(1) error process's unconditional SD. Therefore,
+# each model has correctly calibrated Gaussian one-step VaR under the null.
+#
+# Under kupiec_miscalibration < 1, forecast SD is deliberately too small:
+# VaR bands are too narrow and exceedances occur too often. This is a
+# controlled alternative-power configuration for the Kupiec UC test.
+# -----------------------------------------------------------------------------
+
 simulate_forecast_levels_for_kupiec <- function(
     P,
     phi,
     correlated,
     heteroskedastic,
+    kupiec_miscalibration = 1,
     K = K_models
 ) {
+  if (kupiec_miscalibration <= 0) {
+    stop("kupiec_miscalibration must be positive.")
+  }
+  
   realized <- cumsum(rnorm(P, sd = 1))
   
   forecast_errors <- simulate_loss_differentials(
@@ -70,6 +119,7 @@ simulate_forecast_levels_for_kupiec <- function(
     phi = phi,
     correlated = correlated,
     heteroskedastic = heteroskedastic,
+    alternative_means = rep(0, K + 1L),
     K = K + 1L
   )
   
@@ -86,10 +136,20 @@ simulate_forecast_levels_for_kupiec <- function(
   
   benchmark_col <- K + 1L
   
-  # A positive time-varying predictive SD for each non-benchmark model.
-  sd_base <- sd(diff(realized))
+  # For homoskedastic innovations with variance 1, the stationary AR(1)
+  # forecast-error SD is sqrt(1 / (1 - phi^2)).
+  unconditional_error_sd <- sqrt(1 / (1 - phi^2))
+  
+  if (heteroskedastic) {
+    innovation_scale <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
+    
+    sd_path <- unconditional_error_sd * innovation_scale
+  } else {
+    sd_path <- rep(unconditional_error_sd, P)
+  }
+  
   forecast_sd_models <- matrix(
-    sd_base * (1 + 0.1 * abs(rnorm(P * K))),
+    rep(sd_path * kupiec_miscalibration, K),
     nrow = P,
     ncol = K,
     dimnames = list(NULL, paste0("M", seq_len(K)))
@@ -98,6 +158,7 @@ simulate_forecast_levels_for_kupiec <- function(
   list(
     forecast_matrix = forecast_matrix,
     forecast_sd_models = forecast_sd_models,
+    realized = realized,
     benchmark_col = benchmark_col
   )
 }
@@ -113,7 +174,8 @@ run_full_battery <- function(
     correlated,
     heteroskedastic,
     block_length,
-    n_boot
+    n_boot,
+    kupiec_miscalibration
 ) {
   K <- ncol(loss_diff)
   
@@ -124,8 +186,8 @@ run_full_battery <- function(
     KLIC = NA_real_,
     ZP = NA_real_,
     CDF_RC = NA_real_,
-    DM_any_reject = NA_real_,
-    Kupiec_any_reject = NA_real_
+    DM_mean_rejection_rate = NA_real_,
+    Kupiec_mean_rejection_rate = NA_real_
   )
   
   wrc <- tryCatch(
@@ -173,7 +235,6 @@ run_full_battery <- function(
     results$CPA <- cpa$p.value
   }
   
-  # Simulated NLS-difference input for the KLIC Reality Check.
   klic_input <- loss_diff / 2 +
     matrix(rnorm(P * K, sd = 0.1), nrow = P, ncol = K)
   
@@ -232,8 +293,9 @@ run_full_battery <- function(
   )
   
   if (!is.null(dm)) {
-    results$DM_any_reject <- as.numeric(
-      any(dm$Significant, na.rm = TRUE)
+    results$DM_mean_rejection_rate <- mean(
+      dm$Significant,
+      na.rm = TRUE
     )
   }
   
@@ -242,6 +304,7 @@ run_full_battery <- function(
     phi = phi,
     correlated = correlated,
     heteroskedastic = heteroskedastic,
+    kupiec_miscalibration = kupiec_miscalibration,
     K = K
   )
   
@@ -249,6 +312,7 @@ run_full_battery <- function(
     compute_kupiec(
       forecast_matrix = kupiec_simulation$forecast_matrix,
       forecast_sd_models = kupiec_simulation$forecast_sd_models,
+      realized = kupiec_simulation$realized,
       benchmark_col = kupiec_simulation$benchmark_col,
       alpha = alpha
     ),
@@ -262,8 +326,9 @@ run_full_battery <- function(
       numeric(1)
     )
     
-    results$Kupiec_any_reject <- as.numeric(
-      any(kupiec_p_values <= alpha, na.rm = TRUE)
+    results$Kupiec_mean_rejection_rate <- mean(
+      kupiec_p_values <= alpha,
+      na.rm = TRUE
     )
   }
   
@@ -271,68 +336,90 @@ run_full_battery <- function(
 }
 
 # -----------------------------------------------------------------------------
-# Simulation configurations
+# Simulation scenarios
 # -----------------------------------------------------------------------------
 
-baseline <- list(
+null_baseline <- list(
+  Scenario = "Null",
   P = 150L,
   phi = 0.3,
   correlated = TRUE,
   heteroskedastic = FALSE,
-  block_length = 5L
+  block_length = 5L,
+  alternative_means = rep(0, K_models),
+  kupiec_miscalibration = 1
 )
 
-configs <- list()
-
-for (P_value in c(100L, 150L, 250L)) {
-  configs[[length(configs) + 1L]] <- modifyList(
-    baseline,
-    list(P = P_value)
+alternative_baseline <- modifyList(
+  null_baseline,
+  list(
+    Scenario = "Alternative",
+    alternative_means = c(0.30, 0.30, 0.15, 0, 0),
+    kupiec_miscalibration = 0.60
   )
-}
-
-for (phi_value in c(0.0, 0.6)) {
-  configs[[length(configs) + 1L]] <- modifyList(
-    baseline,
-    list(phi = phi_value)
-  )
-}
-
-configs[[length(configs) + 1L]] <- modifyList(
-  baseline,
-  list(correlated = FALSE)
 )
 
-configs[[length(configs) + 1L]] <- modifyList(
-  baseline,
-  list(heteroskedastic = TRUE)
-)
-
-for (block_length_value in c(3L, 8L)) {
-  configs[[length(configs) + 1L]] <- modifyList(
-    baseline,
-    list(block_length = block_length_value)
-  )
-}
-
-configs[[length(configs) + 1L]] <- baseline
-
-config_keys <- vapply(
-  configs,
-  function(config) {
-    paste(
-      config$P,
-      config$phi,
-      config$correlated,
-      config$heteroskedastic,
-      config$block_length,
-      sep = "_"
+make_config_grid <- function(base_config) {
+  configs <- list()
+  
+  for (P_value in c(100L, 150L, 250L)) {
+    configs[[length(configs) + 1L]] <- modifyList(
+      base_config,
+      list(P = P_value)
     )
-  },
-  character(1)
-)
+  }
+  
+  for (phi_value in c(0.0, 0.6)) {
+    configs[[length(configs) + 1L]] <- modifyList(
+      base_config,
+      list(phi = phi_value)
+    )
+  }
+  
+  configs[[length(configs) + 1L]] <- modifyList(
+    base_config,
+    list(correlated = FALSE)
+  )
+  
+  configs[[length(configs) + 1L]] <- modifyList(
+    base_config,
+    list(heteroskedastic = TRUE)
+  )
+  
+  for (block_length_value in c(3L, 8L)) {
+    configs[[length(configs) + 1L]] <- modifyList(
+      base_config,
+      list(block_length = block_length_value)
+    )
+  }
+  
+  configs[[length(configs) + 1L]] <- base_config
+  
+  config_keys <- vapply(
+    configs,
+    function(config) {
+      paste(
+        config$Scenario,
+        config$P,
+        config$phi,
+        config$correlated,
+        config$heteroskedastic,
+        config$block_length,
+        paste(config$alternative_means, collapse = "_"),
+        config$kupiec_miscalibration,
+        sep = "_"
+      )
+    },
+    character(1)
+  )
+  
+  configs[!duplicated(config_keys)]
+}
 
-configs <- configs[!duplicated(config_keys)]
+configs <- c(
+  make_config_grid(null_baseline),
+  make_config_grid(alternative_baseline)
+)
 
 # -----------------------------------------------------------------------------
 # Main loop
@@ -354,8 +441,22 @@ test_names <- c(
   "KLIC",
   "ZP",
   "CDF_RC",
-  "DM_any_reject",
-  "Kupiec_any_reject"
+  "DM_mean_rejection_rate",
+  "Kupiec_mean_rejection_rate"
+)
+
+joint_test_names <- c(
+  "WRC",
+  "SPA",
+  "CPA",
+  "KLIC",
+  "ZP",
+  "CDF_RC"
+)
+
+per_model_test_names <- c(
+  "DM_mean_rejection_rate",
+  "Kupiec_mean_rejection_rate"
 )
 
 for (config_index in seq_along(configs)) {
@@ -363,18 +464,24 @@ for (config_index in seq_along(configs)) {
   
   cat(
     sprintf(
-      "\n[%d/%d] P=%d, phi=%.1f, correlated=%s, heteroskedastic=%s, block_length=%d\n",
+      paste0(
+        "\n[%d/%d] Scenario=%s, P=%d, phi=%.1f, correlated=%s, ",
+        "heteroskedastic=%s, block_length=%d, means=(%s), VaR-SD multiplier=%.2f\n"
+      ),
       config_index,
       length(configs),
+      config$Scenario,
       config$P,
       config$phi,
       config$correlated,
       config$heteroskedastic,
-      config$block_length
+      config$block_length,
+      paste(config$alternative_means, collapse = ", "),
+      config$kupiec_miscalibration
     )
   )
   
-  p_values <- matrix(
+  battery_values <- matrix(
     NA_real_,
     nrow = n_mc,
     ncol = length(test_names),
@@ -386,7 +493,9 @@ for (config_index in seq_along(configs)) {
       P = config$P,
       phi = config$phi,
       correlated = config$correlated,
-      heteroskedastic = config$heteroskedastic
+      heteroskedastic = config$heteroskedastic,
+      alternative_means = config$alternative_means,
+      K = K_models
     )
     
     battery <- run_full_battery(
@@ -396,11 +505,12 @@ for (config_index in seq_along(configs)) {
       correlated = config$correlated,
       heteroskedastic = config$heteroskedastic,
       block_length = config$block_length,
-      n_boot = n_boot
+      n_boot = n_boot,
+      kupiec_miscalibration = config$kupiec_miscalibration
     )
     
     for (test_name in test_names) {
-      p_values[simulation_index, test_name] <- battery[[test_name]]
+      battery_values[simulation_index, test_name] <- battery[[test_name]]
     }
     
     if (simulation_index %% 50L == 0L) {
@@ -408,26 +518,47 @@ for (config_index in seq_along(configs)) {
     }
   }
   
-  rejection_rate <- colMeans(
-    p_values <= alpha,
-    na.rm = TRUE
-  )
+  rejection_rate <- rep(NA_real_, length(test_names))
+  n_valid_draws <- integer(length(test_names))
+  names(rejection_rate) <- test_names
+  names(n_valid_draws) <- test_names
   
-  n_valid_draws <- colSums(!is.na(p_values))
+  for (test_name in joint_test_names) {
+    values <- battery_values[, test_name]
+    valid <- !is.na(values)
+    n_valid_draws[test_name] <- sum(valid)
+    
+    if (n_valid_draws[test_name] > 0L) {
+      rejection_rate[test_name] <- mean(values[valid] <= alpha)
+    }
+  }
+  
+  for (test_name in per_model_test_names) {
+    values <- battery_values[, test_name]
+    valid <- !is.na(values)
+    n_valid_draws[test_name] <- sum(valid)
+    
+    if (n_valid_draws[test_name] > 0L) {
+      rejection_rate[test_name] <- mean(values[valid])
+    }
+  }
   
   monte_carlo_se <- sqrt(
     rejection_rate * (1 - rejection_rate) / n_valid_draws
   )
   
   config_results <- data.frame(
+    Scenario = config$Scenario,
     P = config$P,
     phi = config$phi,
     correlated = config$correlated,
     heteroskedastic = config$heteroskedastic,
     block_length = config$block_length,
+    Alternative_Means = paste(config$alternative_means, collapse = ";"),
+    Kupiec_SD_Multiplier = config$kupiec_miscalibration,
     Test = test_names,
-    Rejection_Rate = round(rejection_rate, 4),
-    MC_SE = round(monte_carlo_se, 4),
+    Rejection_Rate = rejection_rate,
+    MC_SE = monte_carlo_se,
     N_Valid_Draws = n_valid_draws,
     stringsAsFactors = FALSE
   )
