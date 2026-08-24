@@ -1,8 +1,8 @@
 "Function","Runs","Bootstrap_Replications","Minimum_Runtime_Sec","Median_Runtime_Sec","Mean_Runtime_Sec","Maximum_Runtime_Sec","Benchmark","Realized_Series","Competing_Models"
-"white_reality_check",20,999,0.033345013,0.04306435,0.053461868,0.173386417,"AR_1","HA",13
-"superior_predictive_ability_test",20,999,0.033946114,0.041883058,0.0424189116,0.057335343,"AR_1","HA",13
-"white_reality_check_conditional",20,999,0.031901075,0.038926425,0.05381224375,0.201931847,"AR_1","HA",13
-"kullback_leibler_test",20,999,0.033315411,0.0414301105,0.04675067435,0.094531404,"AR_1","HA",13
-"reality_check_zp_test",20,999,0.033971534,0.042577229,0.05170363835,0.155710907,"AR_1","HA",13
-"compute_crps",20,NA,3.28e-05,8.3189e-05,0.000113488,0.000558584,"AR_1","HA",13
-"compute_kupiec",20,NA,0.000175111,0.0002536875,0.0002764015,0.000438577,"AR_1","HA",13
+"white_reality_check",20,999,0.032690612,0.0345259565,0.03865330145,0.098505165,"AR_1","HA",13
+"superior_predictive_ability_test",20,999,0.034061365,0.0420246925,0.0407746312,0.049470887,"AR_1","HA",13
+"white_reality_check_conditional",20,999,0.03226126,0.034433727,0.04299181075,0.171406363,"AR_1","HA",13
+"kullback_leibler_test",20,999,0.03367658,0.036536412,0.04083192255,0.098052156,"AR_1","HA",13
+"reality_check_zp_test",20,999,0.034148531,0.035816165,0.04219213855,0.135082741,"AR_1","HA",13
+"compute_crps",20,NA,3.0832e-05,7.5809e-05,0.00011539655,0.000804461,"AR_1","HA",13
+"compute_kupiec",20,NA,0.000204549,0.0002857495,0.0003283977,0.000756286,"AR_1","HA",13

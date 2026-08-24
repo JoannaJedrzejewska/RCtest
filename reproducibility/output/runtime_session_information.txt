@@ -3,4 +3,4 @@ Parallel computing: NONE (single-threaded)
 Random seed: 20260822
 Forecast-comparison benchmark: AR_1
 Realised outcome series: HA
-Date: 2026-08-23
+Date: 2026-08-24
