@@ -313,6 +313,7 @@ run_comprehensive_erc_analysis <- function(data_list_prepared, mods_matrix, alph
     results_for_dataset$Kullback_Leibler <- kullback_leibler_test(klic_diff, block_length, n_boot)
     
     results_for_dataset$VaR_Backtests <- compute_kupiec(zp_matrix, forecast_sd_models,
+                                                        realized = realizations_raw,
                                                         benchmark_col = new_bench_idx)
     
     all_results[[dataset_name]]           <- results_for_dataset
