@@ -1,0 +1,6 @@
+"Shared_LR_Statistic","Models","N_Models","Shared_Violation_Count","Violation_Counts"
+0.008051973609,"BMS; TVP-REG",2,TRUE,"8; 8"
+0.069799039604,"DMS; Lin_reg",2,TRUE,"9; 9"
+0.209698992326,"BDMM-NR; BMA; TVP-K",3,TRUE,"7; 7; 7"
+0.367048448876,"BDMM-K; B-LASSO; B-RIDGE",3,TRUE,"10; 10; 10"
+0.877535847324,"BDMM-SS; DMA; DMA-K",3,TRUE,"11; 11; 11"
