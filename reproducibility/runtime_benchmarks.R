@@ -1,12 +1,12 @@
 # =============================================================================
-# runtime_benchmarks.R
-#
-# Reproduces:
+# The script reproduces:
 #   Table 4: Runtime scaling by model count and bootstrap replications.
 #   Table 5: Runtime by core RCtest function.
 #   Memory-allocation profile for one full WRC/SPA/CPA battery.
+#
+# AR_1 is the forecast-comparison benchmark.
+# HA is the realised outcome series.
 # =============================================================================
-
 
 library(RCtest)
 library(microbenchmark)
@@ -36,6 +36,7 @@ available_packages <- packages_to_report[
 
 print(installed_info[available_packages, "Version"])
 
+cat("Parallel computing used: NONE (single-threaded)\n")
 cat("Random seed: 20260822\n")
 cat("Forecast-comparison benchmark: AR_1\n")
 cat("Realised outcome series: HA\n\n")
@@ -91,7 +92,6 @@ if (length(competitor_cols) != 13L) {
 
 realized <- metals[, realized_col]
 
-# Benchmark and competitor losses are all calculated against realised HA.
 benchmark_loss <- (metals[, benchmark_col] - realized)^2
 
 competitor_loss <- sweep(
@@ -103,7 +103,6 @@ competitor_loss <- sweep(
   }
 )
 
-# Positive values mean a competing model has lower squared loss than AR_1.
 loss_diff <- sweep(
   competitor_loss,
   1,
@@ -167,7 +166,6 @@ cat("Data preparation is OUTSIDE all timed blocks.\n")
 cat("Bootstrap RNG inside each test call is included in runtime.\n")
 cat("Table 4/5 empirical benchmark: AR_1 vs 13 competing forecasts.\n\n")
 
-
 N_REPS <- 20L
 alpha <- 0.05
 block_length <- 5L
@@ -176,10 +174,6 @@ table5_boot_reps <- 999L
 # =============================================================================
 # TABLE 4 — Runtime scaling by model count and bootstrap replications
 # =============================================================================
-
-# The AR_1 workflow has 13 observed competitor columns. For K = 30, append
-# 17 synthetic loss-difference series. Construction is done once before
-# timing and is explicitly excluded from runtime measurements.
 
 set.seed(20260822)
 
@@ -309,9 +303,7 @@ set.seed(20260822)
 
 for (row_index in seq_len(nrow(table4_results))) {
   K <- table4_results$Models[row_index]
-  
-  n_boot_current <-
-    table4_results$Bootstrap_Replications[row_index]
+  n_boot_current <- table4_results$Bootstrap_Replications[row_index]
   
   timings <- vapply(
     seq_len(N_REPS),
@@ -344,7 +336,7 @@ table4_results$Data_Source <- ifelse(
 table4_results$Protocol_Note <- paste0(
   "Median/minimum/mean/maximum of ",
   N_REPS,
-  " full WRC+SPA+CPA battery runs; setup excluded from timing."
+  " complete WRC+SPA+CPA battery runs; setup excluded from timing."
 )
 
 cat("\n=== TABLE 4 SUMMARY ===\n")
@@ -407,6 +399,7 @@ table5_benchmark <- microbenchmark(
   compute_kupiec = compute_kupiec(
     forecast_matrix = metals,
     forecast_sd_models = forecast_sd_models,
+    realized = realized,
     benchmark_col = benchmark_col,
     alpha = alpha
   ),
