@@ -1,5 +1,5 @@
 "Package","Installed","Version","Audit_Date","R_Version"
-"RCtest",TRUE,"1.1","2026-08-24","R version 4.4.1 (2024-06-14)"
+"RCtest",TRUE,"1.2.0","2026-08-24","R version 4.4.1 (2024-06-14)"
 "forecast",TRUE,"9.0.2","2026-08-24","R version 4.4.1 (2024-06-14)"
 "MCS",TRUE,"0.2.0","2026-08-24","R version 4.4.1 (2024-06-14)"
 "esback",TRUE,"0.3.1","2026-08-24","R version 4.4.1 (2024-06-14)"
