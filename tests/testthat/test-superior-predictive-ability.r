@@ -3,8 +3,7 @@ library(RCtest)
 
 # =============================================================================
 # Unit tests for superior_predictive_ability_test(), following the same
-# pattern established for white_reality_check(): sign convention, direction
-# reversal, bootstrap reproducibility, degenerate input, single-model case.
+# pattern established for white_reality_check().
 # =============================================================================
 
 make_loss_differences <- function(seed = 123, n = 200L) {
