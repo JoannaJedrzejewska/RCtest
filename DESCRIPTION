@@ -23,13 +23,13 @@ Description: Implements a comprehensive suite of statistical tests for
     West, 1987) <doi:10.2307/1913610>, and Moving Block Bootstrap
     resampling (Kunsch, 1989) <doi:10.1214/aos/1176347265>.
 Imports: ggplot2, gridExtra, ggrepel, rlang, stats
+Suggests:testthat
 Encoding: UTF-8
 LazyData: true
 Note: This research was funded in whole by National Science Centre,
         Poland, grant number 2022/45/B/HS4/00510.
 RoxygenNote: 7.3.3
-Version: 1.1
-Date: 2026-06-02
+Version: 1.2
 License: GPL-3
 NeedsCompilation: no
 Author: Joanna Jedrzejewska [aut, cre] (Faculty of Economic Sciences,
@@ -41,4 +41,3 @@ Depends: R (>= 3.5.0)
 Packaged: 2026-06-08 11:53:56 UTC; joannajedrzejewska
 Language: en-US
 Repository: CRAN
-Date/Publication: 2026-06-02 08:20:08 UTC
