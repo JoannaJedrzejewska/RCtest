@@ -172,18 +172,18 @@ package_versions <- do.call(rbind, version_rows)
 
 write.csv(
   function_inventory,
-  file.path(output_dir, "table6_package_function_inventory.csv"),
+  file.path(output_dir, "table8_package_function_inventory.csv"),
   row.names = FALSE
 )
 
 write.csv(
   keyword_matches,
-  file.path(output_dir, "table6_package_keyword_matches.csv"),
+  file.path(output_dir, "table8_package_keyword_matches.csv"),
   row.names = FALSE
 )
 
 write.csv(
   package_versions,
-  file.path(output_dir, "table6_package_versions.csv"),
+  file.path(output_dir, "table8_package_versions.csv"),
   row.names = FALSE
 )
