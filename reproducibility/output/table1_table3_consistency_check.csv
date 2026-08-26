@@ -1,0 +1,4 @@
+"Loss_Measure","Table3_Source","Frac_Models_Positive_And_Significant","WRC_P_Value","SPA_P_Value_Consistent","CPA_P_Value","Contradiction_Detected"
+"MSE","Measure-specific Table 3 file",0.7692,0.01,0,0,FALSE
+"MAE","Measure-specific Table 3 file",0.7692,0.003,0,0,FALSE
+"MASE","Measure-specific Table 3 file",0.7692,0.002,0,0,FALSE
