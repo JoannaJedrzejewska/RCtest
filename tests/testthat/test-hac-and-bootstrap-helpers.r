@@ -14,9 +14,6 @@ test_that("estimate_long_run_covariance() estimates a plausible LRV for iid nois
 
   expect_true(is.finite(result[1, 1]))
   expect_gt(result[1, 1], 0)
-  # Generous finite-sample range around the true LRV=4. This is intentionally
-  # broad to avoid false failures due to sampling variation/HAC weighting,
-  # while still catching zero, negative, or explosively large output.
   expect_gt(result[1, 1], 0.5)
   expect_lt(result[1, 1], 10)
 })
