@@ -1,5 +1,5 @@
 # =============================================================================
-# Table 6 supporting audit: full exported-function inventories plus keyword
+# Table 8 supporting audit: full exported-function inventories plus keyword
 # matches for packages compared in the manuscript.
 # The inventories were also reviewed manually.
 # =============================================================================
