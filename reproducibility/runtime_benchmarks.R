@@ -1,7 +1,7 @@
 # =============================================================================
 # The script reproduces:
-#   Table 4: Runtime scaling by model count and bootstrap replications.
-#   Table 5: Runtime by core RCtest function.
+#   Table 6: Runtime scaling by model count and bootstrap replications.
+#   Table 7: Runtime by core RCtest function.
 #   Memory-allocation profile for one full WRC/SPA/CPA battery.
 #
 # AR_1 is the forecast-comparison benchmark.
@@ -164,15 +164,15 @@ colnames(zp_diff) <- competitor_names
 
 cat("Data preparation is OUTSIDE all timed blocks.\n")
 cat("Bootstrap RNG inside each test call is included in runtime.\n")
-cat("Table 4/5 empirical benchmark: AR_1 vs 13 competing forecasts.\n\n")
+cat("Table 6/7 empirical benchmark: AR_1 vs 13 competing forecasts.\n\n")
 
 N_REPS <- 20L
 alpha <- 0.05
 block_length <- 5L
-table5_boot_reps <- 999L
+table7_boot_reps <- 999L
 
 # =============================================================================
-# TABLE 4 — Runtime scaling by model count and bootstrap replications
+# TABLE 6 — Runtime scaling by model count and bootstrap replications
 # =============================================================================
 
 set.seed(20260822)
@@ -286,24 +286,24 @@ run_full_battery_once <- function(K, n_boot) {
 model_counts <- c(5L, 13L, 30L)
 bootstrap_replications <- c(199L, 999L, 4999L)
 
-table4_results <- expand.grid(
+table6_results <- expand.grid(
   Models = model_counts,
   Bootstrap_Replications = bootstrap_replications,
   KEEP.OUT.ATTRS = FALSE,
   stringsAsFactors = FALSE
 )
 
-table4_results$Minimum_Runtime_Sec <- NA_real_
-table4_results$Median_Runtime_Sec <- NA_real_
-table4_results$Mean_Runtime_Sec <- NA_real_
-table4_results$Maximum_Runtime_Sec <- NA_real_
-table4_results$Runs <- N_REPS
+table6_results$Minimum_Runtime_Sec <- NA_real_
+table6_results$Median_Runtime_Sec <- NA_real_
+table6_results$Mean_Runtime_Sec <- NA_real_
+table6_results$Maximum_Runtime_Sec <- NA_real_
+table6_results$Runs <- N_REPS
 
 set.seed(20260822)
 
-for (row_index in seq_len(nrow(table4_results))) {
-  K <- table4_results$Models[row_index]
-  n_boot_current <- table4_results$Bootstrap_Replications[row_index]
+for (row_index in seq_len(nrow(table6_results))) {
+  K <- table6_results$Models[row_index]
+  n_boot_current <- table6_results$Bootstrap_Replications[row_index]
   
   timings <- vapply(
     seq_len(N_REPS),
@@ -318,53 +318,53 @@ for (row_index in seq_len(nrow(table4_results))) {
     numeric(1)
   )
   
-  table4_results$Minimum_Runtime_Sec[row_index] <- min(timings)
-  table4_results$Median_Runtime_Sec[row_index] <- median(timings)
-  table4_results$Mean_Runtime_Sec[row_index] <- mean(timings)
-  table4_results$Maximum_Runtime_Sec[row_index] <- max(timings)
+  table6_results$Minimum_Runtime_Sec[row_index] <- min(timings)
+  table6_results$Median_Runtime_Sec[row_index] <- median(timings)
+  table6_results$Mean_Runtime_Sec[row_index] <- mean(timings)
+  table6_results$Maximum_Runtime_Sec[row_index] <- max(timings)
 }
 
-table4_results$Benchmark <- benchmark_name
-table4_results$Realized_Series <- realized_name
+table6_results$Benchmark <- benchmark_name
+table6_results$Realized_Series <- realized_name
 
-table4_results$Data_Source <- ifelse(
-  table4_results$Models <= 13L,
+table6_results$Data_Source <- ifelse(
+  table6_results$Models <= 13L,
   "Observed AR_1-versus-competitor loss differentials",
   "Observed AR_1 loss differentials plus 17 synthetic AR(1)-perturbed series"
 )
 
-table4_results$Protocol_Note <- paste0(
+table6_results$Protocol_Note <- paste0(
   "Median/minimum/mean/maximum of ",
   N_REPS,
   " complete WRC+SPA+CPA battery runs; setup excluded from timing."
 )
 
-cat("\n=== TABLE 4 SUMMARY ===\n")
-print(table4_results, row.names = FALSE)
+cat("\n=== TABLE 6 SUMMARY ===\n")
+print(table6_results, row.names = FALSE)
 
 write.csv(
-  table4_results,
-  file.path(output_dir, "runtime_table4_summary.csv"),
+  table6_results,
+  file.path(output_dir, "runtime_table6_summary.csv"),
   row.names = FALSE
 )
 
 # =============================================================================
-# TABLE 5 — Runtime by core RCtest function
+# TABLE 7 — Runtime by core RCtest function
 # =============================================================================
 
 set.seed(20260822)
 
-table5_benchmark <- microbenchmark(
+table7_benchmark <- microbenchmark(
   white_reality_check = white_reality_check(
     loss_differences = loss_diff,
-    n_simulations = table5_boot_reps,
+    n_simulations = table7_boot_reps,
     block_length = block_length,
     alpha = alpha
   ),
   
   superior_predictive_ability_test = superior_predictive_ability_test(
     loss_differences = loss_diff,
-    num_bootstrap_replications = table5_boot_reps,
+    num_bootstrap_replications = table7_boot_reps,
     block_length = block_length,
     alpha = alpha
   ),
@@ -373,21 +373,21 @@ table5_benchmark <- microbenchmark(
     loss_differences = loss_diff,
     weighting_vector = weighting_vector,
     block_length = block_length,
-    num_bootstrap_replications = table5_boot_reps,
+    num_bootstrap_replications = table7_boot_reps,
     alpha = alpha
   ),
   
   kullback_leibler_test = kullback_leibler_test(
     log_likelihood_differences = log_lik_diff,
     block_length = block_length,
-    num_bootstrap_replications = table5_boot_reps,
+    num_bootstrap_replications = table7_boot_reps,
     alpha = alpha
   ),
   
   reality_check_zp_test = reality_check_zp_test(
     zp_loss_differences = zp_diff,
     block_length = block_length,
-    num_bootstrap_replications = table5_boot_reps,
+    num_bootstrap_replications = table7_boot_reps,
     alpha = alpha
   ),
   
@@ -407,30 +407,30 @@ table5_benchmark <- microbenchmark(
   times = N_REPS
 )
 
-cat("\n=== TABLE 5 RAW BENCHMARK RESULTS ===\n")
-print(table5_benchmark)
+cat("\n=== TABLE 7 RAW BENCHMARK RESULTS ===\n")
+print(table7_benchmark)
 
-table5_results <- summary(table5_benchmark, unit = "s")
+table7_results <- summary(table7_benchmark, unit = "s")
 
-table5_results$Median_Runtime_Sec <- table5_results$median
-table5_results$Minimum_Runtime_Sec <- table5_results$min
-table5_results$Maximum_Runtime_Sec <- table5_results$max
-table5_results$Mean_Runtime_Sec <- table5_results$mean
-table5_results$Runs <- table5_results$neval
+table7_results$Median_Runtime_Sec <- table7_results$median
+table7_results$Minimum_Runtime_Sec <- table7_results$min
+table7_results$Maximum_Runtime_Sec <- table7_results$max
+table7_results$Mean_Runtime_Sec <- table7_results$mean
+table7_results$Runs <- table7_results$neval
 
-table5_results$Bootstrap_Replications <- ifelse(
-  table5_results$expr %in% c(
+table7_results$Bootstrap_Replications <- ifelse(
+  table7_results$expr %in% c(
     "white_reality_check",
     "superior_predictive_ability_test",
     "white_reality_check_conditional",
     "kullback_leibler_test",
     "reality_check_zp_test"
   ),
-  table5_boot_reps,
+  table7_boot_reps,
   NA_integer_
 )
 
-table5_results <- table5_results[, c(
+table7_results <- table7_results[, c(
   "expr",
   "Runs",
   "Bootstrap_Replications",
@@ -440,18 +440,18 @@ table5_results <- table5_results[, c(
   "Maximum_Runtime_Sec"
 )]
 
-names(table5_results)[names(table5_results) == "expr"] <- "Function"
+names(table7_results)[names(table7_results) == "expr"] <- "Function"
 
-table5_results$Benchmark <- benchmark_name
-table5_results$Realized_Series <- realized_name
-table5_results$Competing_Models <- 13L
+table7_results$Benchmark <- benchmark_name
+table7_results$Realized_Series <- realized_name
+table7_results$Competing_Models <- 13L
 
-cat("\n=== TABLE 5 SUMMARY ===\n")
-print(table5_results, row.names = FALSE)
+cat("\n=== TABLE 7 SUMMARY ===\n")
+print(table7_results, row.names = FALSE)
 
 write.csv(
-  table5_results,
-  file.path(output_dir, "runtime_table5_summary.csv"),
+  table7_results,
+  file.path(output_dir, "runtime_table7_summary.csv"),
   row.names = FALSE
 )
 
