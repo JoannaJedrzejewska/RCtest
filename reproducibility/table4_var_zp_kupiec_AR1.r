@@ -1,14 +1,14 @@
 # =============================================================================
-# Table 3: VaR coverage, Kupiec UC backtests, and mean ZP loss.
+# Table 4: VaR coverage, Kupiec UC backtests, and mean ZP loss.
 #
 # AR_1 is the forecast-comparison benchmark.
 # HA is the realised outcome series.
 #
 # Outputs:
-#   reproducibility/output/table3_var_zp_kupiec_AR1_raw.csv
-#   reproducibility/output/table3_var_zp_kupiec_AR1.csv
-#   reproducibility/output/table3_kupiec_raw_AR1.rds
-#   reproducibility/output/table3_zp_loss_raw_AR1.csv
+#   reproducibility/output/table4_var_zp_kupiec_AR1_raw.csv
+#   reproducibility/output/table4_var_zp_kupiec_AR1.csv
+#   reproducibility/output/table4_kupiec_raw_AR1.rds
+#   reproducibility/output/table4_zp_loss_raw_AR1.csv
 # =============================================================================
 library(RCtest)
 
@@ -38,7 +38,7 @@ if (is.na(realized_col)) {
 competitor_cols <- setdiff(forecast_model_cols, benchmark_col)
 competitor_names <- colnames(metals)[competitor_cols]
 
-if (length(competitor_cols) != 13L) {
+if (length(competitor_cols) != 14L) {
   stop("Expected 13 competing forecasts after excluding AR_1.")
 }
 
@@ -81,7 +81,7 @@ kupiec_raw <- compute_kupiec(
 
 saveRDS(
   kupiec_raw,
-  file.path(output_dir, "table3_kupiec_raw_AR1.rds")
+  file.path(output_dir, "table4_kupiec_raw_AR1.rds")
 )
 
 cat("=== RAW KUPIEC OUTPUT ===\n")
@@ -120,7 +120,7 @@ zp_loss_all <- compute_zp(
 
 write.csv(
   zp_loss_all,
-  file.path(output_dir, "table3_zp_loss_raw_AR1.csv"),
+  file.path(output_dir, "table4_zp_loss_raw_AR1.csv"),
   row.names = FALSE
 )
 
@@ -141,7 +141,7 @@ if (
   names(mean_zp_loss) <- competitor_names
 }
 
-table3_raw <- merge(
+table4_raw <- merge(
   kupiec_table,
   data.frame(
     Model = names(mean_zp_loss),
@@ -153,22 +153,22 @@ table3_raw <- merge(
   sort = FALSE
 )
 
-table3_raw$Model <- factor(
-  table3_raw$Model,
+table4_raw$Model <- factor(
+  table4_raw$Model,
   levels = competitor_names
 )
 
-table3_raw <- table3_raw[
-  order(table3_raw$Model),
+table4_raw <- table4_raw[
+  order(table4_raw$Model),
   ,
   drop = FALSE
 ]
 
-table3_raw$Model <- as.character(table3_raw$Model)
+table4_raw$Model <- as.character(table4_raw$Model)
 
 write.csv(
-  table3_raw,
-  file.path(output_dir, "table3_var_zp_kupiec_AR1_raw.csv"),
+  table4_raw,
+  file.path(output_dir, "table4_var_zp_kupiec_AR1_raw.csv"),
   row.names = FALSE
 )
 
@@ -184,29 +184,29 @@ format_p_value <- function(p) {
   sprintf("%.3f", p)
 }
 
-table3_manuscript <- table3_raw
+table4_manuscript <- table4_raw
 
-table3_manuscript$Kupiec_LR_UC <- sprintf(
+table4_manuscript$Kupiec_LR_UC <- sprintf(
   "%.4f",
-  table3_manuscript$Kupiec_LR_UC
+  table4_manuscript$Kupiec_LR_UC
 )
 
-table3_manuscript$Kupiec_p_value <- vapply(
-  table3_manuscript$Kupiec_p_value,
+table4_manuscript$Kupiec_p_value <- vapply(
+  table4_manuscript$Kupiec_p_value,
   format_p_value,
   character(1)
 )
 
-table3_manuscript$Mean_ZP_Loss <- sprintf(
+table4_manuscript$Mean_ZP_Loss <- sprintf(
   "%.6f",
-  table3_manuscript$Mean_ZP_Loss
+  table4_manuscript$Mean_ZP_Loss
 )
 
-cat("\n=== TABLE 3: AR_1 BENCHMARK ===\n")
-print(table3_manuscript, row.names = FALSE)
+cat("\n=== TABLE 4: AR_1 BENCHMARK ===\n")
+print(table4_manuscript, row.names = FALSE)
 
 write.csv(
-  table3_manuscript,
-  file.path(output_dir, "table3_var_zp_kupiec_AR1.csv"),
+  table4_manuscript,
+  file.path(output_dir, "table4_var_zp_kupiec_AR1.csv"),
   row.names = FALSE
 )
