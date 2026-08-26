@@ -1,22 +1,22 @@
 # =============================================================================
-# Table 2: Per-model forecast-comparison statistics using AR_1 as benchmark.
+# Table 3: Per-model forecast-comparison statistics using AR_1 as benchmark.
 #
 # HA is the realized outcome series.
 # The 13 forecast methods other than AR_1 are evaluated against AR_1.
 #
 # Outputs (one triplet per loss measure):
-#   reproducibility/output/table2_AR1_MSE_raw.csv
-#   reproducibility/output/table2_AR1_MSE.csv
-#   reproducibility/output/table2_AR1_MAE_raw.csv
-#   reproducibility/output/table2_AR1_MAE.csv
-#   reproducibility/output/table2_AR1_MASE_raw.csv
-#   reproducibility/output/table2_AR1_MASE.csv
+#   reproducibility/output/table3_AR1_MSE_raw.csv
+#   reproducibility/output/table3_AR1_MSE.csv
+#   reproducibility/output/table3_AR1_MAE_raw.csv
+#   reproducibility/output/table3_AR1_MAE.csv
+#   reproducibility/output/table3_AR1_MASE_raw.csv
+#   reproducibility/output/table3_AR1_MASE.csv
 #
 # For backward compatibility with existing downstream scripts that expect
 # the original (MSE-only, unsuffixed) filenames, the MSE outputs are ALSO
 # written to:
-#   reproducibility/output/table2_AR1_raw.csv
-#   reproducibility/output/table2_AR1.csv
+#   reproducibility/output/table3_AR1_raw.csv
+#   reproducibility/output/table3_AR1.csv
 # =============================================================================
 
 library(RCtest)
@@ -111,10 +111,10 @@ format_bootstrap_p <- function(p, n_boot) {
   sprintf("%.3f", p)
 }
 
-run_table2_for_measure <- function(loss_differences, measure_label) {
+run_table3_for_measure <- function(loss_differences, measure_label) {
   set.seed(20260823)
   
-  table2_raw <- compute_per_model_statistics(
+  table3_raw <- compute_per_model_statistics(
     loss_differences = loss_differences,
     model_names = competitor_names,
     n_boot = n_boot,
@@ -124,106 +124,106 @@ run_table2_for_measure <- function(loss_differences, measure_label) {
     H1 = "same"
   )
   
-  if ("Frac_Better" %in% names(table2_raw)) {
-    names(table2_raw)[
-      names(table2_raw) == "Frac_Better"
+  if ("Frac_Better" %in% names(table3_raw)) {
+    names(table3_raw)[
+      names(table3_raw) == "Frac_Better"
     ] <- "Frac_Better_Than_AR_1"
   }
   
-  table2_raw <- table2_raw[
-    order(table2_raw$Mean_Loss_Diff, decreasing = TRUE),
+  table3_raw <- table3_raw[
+    order(table3_raw$Mean_Loss_Diff, decreasing = TRUE),
     ,
     drop = FALSE
   ]
   
-  table2_raw$Loss_Measure <- measure_label
+  table3_raw$Loss_Measure <- measure_label
   
   write.csv(
-    table2_raw,
-    file.path(output_dir, sprintf("table2_AR1_%s_raw.csv", measure_label)),
+    table3_raw,
+    file.path(output_dir, sprintf("table3_AR1_%s_raw.csv", measure_label)),
     row.names = FALSE
   )
   
-  table2_manuscript <- table2_raw
+  table3_manuscript <- table3_raw
   
   numeric_six_columns <- intersect(
     c("Mean_Loss_Diff"),
-    names(table2_manuscript)
+    names(table3_manuscript)
   )
   
   for (column_name in numeric_six_columns) {
-    table2_manuscript[[column_name]] <- sprintf(
+    table3_manuscript[[column_name]] <- sprintf(
       "%.6f",
-      table2_manuscript[[column_name]]
+      table3_manuscript[[column_name]]
     )
   }
   
   numeric_four_columns <- intersect(
     c("T_Stat"),
-    names(table2_manuscript)
+    names(table3_manuscript)
   )
   
   for (column_name in numeric_four_columns) {
-    table2_manuscript[[column_name]] <- sprintf(
+    table3_manuscript[[column_name]] <- sprintf(
       "%.4f",
-      table2_manuscript[[column_name]]
+      table3_manuscript[[column_name]]
     )
   }
   
   fraction_columns <- grep(
     "^Frac_Better",
-    names(table2_manuscript),
+    names(table3_manuscript),
     value = TRUE
   )
   
   for (column_name in fraction_columns) {
-    table2_manuscript[[column_name]] <- sprintf(
+    table3_manuscript[[column_name]] <- sprintf(
       "%.3f",
-      table2_manuscript[[column_name]]
+      table3_manuscript[[column_name]]
     )
   }
   
   p_columns <- grep(
     "^P_Value",
-    names(table2_manuscript),
+    names(table3_manuscript),
     value = TRUE
   )
   
   for (column_name in p_columns) {
-    table2_manuscript[[column_name]] <- vapply(
-      table2_raw[[column_name]],
+    table3_manuscript[[column_name]] <- vapply(
+      table3_raw[[column_name]],
       format_bootstrap_p,
       character(1),
       n_boot = n_boot
     )
   }
   
-  cat(sprintf("\n=== TABLE 2 (%s) ===\n", measure_label))
-  print(table2_manuscript, row.names = FALSE)
+  cat(sprintf("\n=== TABLE 3 (%s) ===\n", measure_label))
+  print(table3_manuscript, row.names = FALSE)
   
   write.csv(
-    table2_manuscript,
-    file.path(output_dir, sprintf("table2_AR1_%s.csv", measure_label)),
+    table3_manuscript,
+    file.path(output_dir, sprintf("table3_AR1_%s.csv", measure_label)),
     row.names = FALSE
   )
   
-  list(raw = table2_raw, manuscript = table2_manuscript)
+  list(raw = table3_raw, manuscript = table3_manuscript)
 }
 
 all_results <- lapply(names(loss_measure_inputs), function(measure_label) {
-  run_table2_for_measure(loss_measure_inputs[[measure_label]], measure_label)
+  run_table3_for_measure(loss_measure_inputs[[measure_label]], measure_label)
 })
 names(all_results) <- names(loss_measure_inputs)
 
 write.csv(
   all_results$MSE$raw,
-  file.path(output_dir, "table2_AR1_raw.csv"),
+  file.path(output_dir, "table3_AR1_raw.csv"),
   row.names = FALSE
 )
 
 write.csv(
   all_results$MSE$manuscript,
-  file.path(output_dir, "table2_AR1.csv"),
+  file.path(output_dir, "table3_AR1.csv"),
   row.names = FALSE
 )
 
@@ -231,9 +231,9 @@ combined_raw <- do.call(rbind, lapply(all_results, function(x) x$raw))
 
 write.csv(
   combined_raw,
-  file.path(output_dir, "table2_AR1_all_measures_raw.csv"),
+  file.path(output_dir, "table3_AR1_all_measures_raw.csv"),
   row.names = FALSE
 )
 
-cat("\nSaved per-measure files (table2_AR1_MSE/MAE/MASE_raw.csv and\n")
-cat("_manuscript.csv), backward-compatible table2_AR1_raw.csv/table2_AR1.csv\n")
+cat("\nSaved per-measure files (table3_AR1_MSE/MAE/MASE_raw.csv and\n")
+cat("_manuscript.csv), backward-compatible table3_AR1_raw.csv/table3_AR1.csv\n")
