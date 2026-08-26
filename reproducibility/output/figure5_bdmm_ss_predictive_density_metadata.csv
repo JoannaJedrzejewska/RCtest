@@ -1,0 +1,2 @@
+"Period","Model","Benchmark","Realized_Series","Point_Forecast","Realized_Value","Predictive_SD","Interval_Level","Lower_Predictive_Interval","Upper_Predictive_Interval","Distribution","Window_Size"
+100,"BDMM-SS","AR_1","HA",133.343425549226,135.29954673843,4.05118503763576,0.9,126.679819146619,140.007031951833,"Gaussian approximation using model-specific rolling forecast-error SD",20
