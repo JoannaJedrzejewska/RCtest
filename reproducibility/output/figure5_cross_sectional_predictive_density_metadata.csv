@@ -1,2 +1,0 @@
-"Period","Models","Point_Forecast","Reference","Confidence_Interval_Level","Lower_CI","Upper_CI","Distribution_Construction"
-100,14,132.961016412149,"Cross-sectional mean of 14 model forecasts",0.9,131.086700439289,134.509175330257,"Empirical cross-sectional distribution of 14 forecasts, recentered to the cross-sectional mean"
