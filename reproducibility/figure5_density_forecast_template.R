@@ -1,61 +1,127 @@
 # =============================================================================
-# Figure 5: Predictive density forecast.
+# Figure 5 — Cross-sectional predictive density forecast
+#
+# The density is constructed from the 14 forecast models at one selected period.
+# The cross-sectional spread is recentered to the cross-sectional mean, matching
+# the empirical-density convention used for compute_crps().
 # =============================================================================
 
 library(RCtest)
 library(ggplot2)
 
-set.seed(20260822)
 data(metals)
+
 output_dir <- file.path("reproducibility", "output")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Choose the forecast model and the evaluation-period forecast displayed.
-selected_model <- "BDMM-K"
-selected_period <- nrow(metals)
-benchmark_name <- "AR_1"
-n_draws <- 10000
+forecast_model_cols <- seq_len(14L)
+model_names <- colnames(metals)[forecast_model_cols]
 
-if (!selected_model %in% colnames(metals)) stop("selected_model not found.")
-if (!benchmark_name %in% colnames(metals)) stop("AR_1 benchmark not found.")
+selected_period <- 100L
 
-# Forecast residuals are defined relative to the HA reference series, which is
-# column 15 of metals. The empirical residual SD supplies predictive spread.
-reference_series <- metals[, "HA"]
-residuals <- metals[, selected_model] - reference_series
-residual_sd <- sd(residuals, na.rm = TRUE)
-point_forecast <- metals[selected_period, selected_model]
+if (selected_period < 1L || selected_period > nrow(metals)) {
+  stop("selected_period must be between 1 and ", nrow(metals), ".")
+}
 
-# Documented Gaussian predictive distribution: N(point forecast, residual SD^2).
-full_distribution <- rnorm(n_draws, mean = point_forecast, sd = residual_sd)
+ci_level <- 0.90
+
+forecast_values <- as.numeric(
+  metals[selected_period, forecast_model_cols]
+)
+
+cross_sectional_mean <- mean(
+  forecast_values,
+  na.rm = TRUE
+)
+
+full_distribution <- forecast_values -
+  cross_sectional_mean +
+  cross_sectional_mean
+
+point_forecast <- cross_sectional_mean
 
 p <- plot_density_forecast(
   full_distribution = full_distribution,
   point_forecast = point_forecast,
-  title = paste("Predictive Density Forecast:", selected_model),
-  ci_level = 0.90
-)
+  title = NULL,
+  ci_level = ci_level
+) +
+  labs(
+    title = NULL,
+    x = "Forecast Value",
+    y = "Density"
+  ) +
+  theme(
+    plot.title = element_blank()
+  )
+
 print(p)
-ggsave(file.path(output_dir, "figure5_density_forecast.png"),
-       plot = p, width = 9, height = 5.8, dpi = 300)
+
+figure_file <- file.path(
+  output_dir,
+  "figure5_cross_sectional_predictive_density.png"
+)
+
+ggsave(
+  filename = figure_file,
+  plot = p,
+  width = 9,
+  height = 5.8,
+  units = "in",
+  dpi = 300
+)
+
+density_data <- data.frame(
+  Period = selected_period,
+  Model = model_names,
+  Forecast = forecast_values,
+  Cross_Sectional_Mean = cross_sectional_mean,
+  Recentered_Draw = full_distribution,
+  stringsAsFactors = FALSE
+)
 
 write.csv(
-  data.frame(Value = full_distribution),
-  file.path(output_dir, "figure5_density_forecast_draws.csv"),
+  density_data,
+  file.path(
+    output_dir,
+    "figure5_cross_sectional_predictive_density_data.csv"
+  ),
   row.names = FALSE
 )
-write.csv(
-  data.frame(
-    Model = selected_model,
-    Period = selected_period,
-    Point_Forecast = point_forecast,
-    Reference_Series = "HA",
-    Residual_SD = residual_sd,
-    Distribution = "Gaussian N(point forecast, residual SD^2)",
-    Seed = 20260822,
-    Draws = n_draws,
-    stringsAsFactors = FALSE
+
+ci_bounds <- quantile(
+  full_distribution,
+  probs = c((1 - ci_level) / 2, 1 - (1 - ci_level) / 2),
+  na.rm = TRUE
+)
+
+metadata <- data.frame(
+  Period = selected_period,
+  Models = length(model_names),
+  Point_Forecast = point_forecast,
+  Reference = "Cross-sectional mean of 14 model forecasts",
+  Confidence_Interval_Level = ci_level,
+  Lower_CI = unname(ci_bounds[1]),
+  Upper_CI = unname(ci_bounds[2]),
+  Distribution_Construction = paste(
+    "Empirical cross-sectional distribution of 14 forecasts,",
+    "recentered to the cross-sectional mean"
   ),
-  file.path(output_dir, "figure5_density_forecast_metadata.csv"),
+  stringsAsFactors = FALSE
+)
+
+write.csv(
+  metadata,
+  file.path(
+    output_dir,
+    "figure5_cross_sectional_predictive_density_metadata.csv"
+  ),
   row.names = FALSE
+)
+
+cat(
+  "Figure 5 saved to: ",
+  normalizePath(figure_file),
+  "\n",
+  sep = ""
 )
