@@ -1,5 +1,4 @@
 # =============================================================================
-# scripts/validate_numerical_checks.R
 # - Reproduces CDF-RC stability and quantile-grid diagnostics.
 # - Validates the WRC test statistic on a deterministic toy example.
 # - Checks the SPA consistent/conservative p-value relationship.
