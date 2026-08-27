@@ -1,0 +1,4 @@
+"grid_name","quantile_grid","n_thresholds","n_model_quantile_combinations","n_input_rows","n_complete_rows","n_removed_rows","n_nonfinite_variances","n_floored_variances","variance_floor","statistic","p_value"
+"five_points","0.10, 0.30, 0.50, 0.70, 0.90",5,65,165,165,0,0,0,1e-10,0.247090550667424,0.038038038038038
+"nine_points","0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90",9,117,165,165,0,0,0,1e-10,0.250714150116285,0.045045045045045
+"seventeen_points","0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90",17,221,165,165,0,0,0,1e-10,0.266083269061397,0.032032032032032

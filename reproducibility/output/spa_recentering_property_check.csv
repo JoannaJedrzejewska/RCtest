@@ -1,0 +1,2 @@
+"statistic","p_consistent","p_conservative","consistent_not_greater_than_conservative","consistent_decision","conservative_decision"
+10.9544511501033,0,0.261261261261261,TRUE,"Reject H0","Fail to reject H0"
