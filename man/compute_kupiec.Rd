@@ -7,21 +7,33 @@
 compute_kupiec(
   forecast_matrix,
   forecast_sd_models,
+  realized,
   benchmark_col = ncol(forecast_matrix),
   alpha = 0.05
 )
 }
 \arguments{
 \item{forecast_matrix}{\code{\link[base]{matrix}} of dimension \code{P x K_total}.
-Columns contain point forecasts for each model; the benchmark column supplies
-the realized values.}
+Columns contain point forecasts for each model, including the benchmark. This
+matrix must contain \strong{forecasts only}; it must not include the realized
+outcome series as one of its columns.}
 
 \item{forecast_sd_models}{\code{\link[base]{matrix}} of dimension \code{P x K},
-where \code{K = K_total - 1}. Contains time-varying forecast standard deviations,
-typically from \code{\link{estimate_forecast_variance}}.}
+where \code{K = K_total - 1}. Contains time-varying forecast standard deviations
+for each competing model (excluding the benchmark), typically obtained from
+\code{\link{estimate_forecast_variance}}.}
 
-\item{benchmark_col}{Index or name of the benchmark column. Defaults to the last
-column.}
+\item{realized}{\code{\link[base]{numeric}} vector of length \code{P} containing the
+realized (actually observed) outcome series against which VaR violations are
+evaluated. This must be supplied separately from \code{forecast_matrix}: the
+benchmark column of \code{forecast_matrix} contains the benchmark's
+\emph{point forecast}, not the realized outcome, and must not be used as a
+substitute for \code{realized}.}
+
+\item{benchmark_col}{Index or name of the benchmark forecast column within
+\code{forecast_matrix}. Defaults to the last column. This column is excluded from
+VaR backtesting (the benchmark itself is not tested); it is used only to determine
+which columns of \code{forecast_matrix} are competing models.}
 
 \item{alpha}{\code{\link[base]{numeric}} VaR significance level (e.g.,
 \code{0.05} for 95\% VaR). A violation occurs when the realized value falls below
@@ -35,14 +47,16 @@ A named list (one element per competing forecast) of \code{htest} objects,
     H0).}
   \item{\code{p.value}}{P-value from the \eqn{\chi^2(1)} distribution. A large
     p-value indicates correctly calibrated VaR coverage.}
-  \item{\code{actual_exceedances}}{Observed number of VaR violations.}
+  \item{\code{actual_exceedances}}{Observed number of VaR violations, counted
+    against the realized outcome series.}
   \item{\code{expected}}{Expected number of violations
     (\code{P * alpha}).}
 }
 }
 \description{
 Performs Kupiec's (1995) Unconditional Coverage (UC) test for evaluating
-Value-at-Risk (VaR) forecasts from competing forecast against realized values.
+Value-at-Risk (VaR) forecasts from competing forecasting models against the
+\strong{realized} outcome series.
 
 \strong{Hypotheses:}
 \itemize{
@@ -55,8 +69,14 @@ Value-at-Risk (VaR) forecasts from competing forecast against realized values.
 \details{
 For each competing forecast \code{k}, the VaR at level \code{alpha} is:
 \deqn{VaR_{t,k} = \hat{y}_{t,k} + \Phi^{-1}(\alpha) \cdot \hat{\sigma}_{t,k}}
-where \eqn{\Phi^{-1}} is the standard normal quantile function. A violation occurs
-when the realized value falls below \eqn{VaR_{t,k}}. The likelihood-ratio statistic
+where \eqn{\Phi^{-1}} is the standard normal quantile function, \eqn{\hat{y}_{t,k}}
+is model \code{k}'s point forecast, and \eqn{\hat{\sigma}_{t,k}} is model \code{k}'s
+forecast standard deviation from \code{forecast_sd_models}. A violation at time
+\code{t} occurs when the \strong{realized outcome} \eqn{y_t} (supplied via
+\code{realized}) falls below \eqn{VaR_{t,k}}:
+\deqn{\text{violation}_{t,k} = \mathbb{1}(y_t < VaR_{t,k})}
+The benchmark forecast itself is never compared against \code{VaR_matrix}; only the
+realized series is used to determine violations. The likelihood-ratio statistic
 \eqn{LR_{UC}} follows a \eqn{\chi^2(1)} distribution under H0 (Kupiec, 1995).
 \strong{Failing to reject H0} (large p-value) indicates correctly calibrated VaR;
 \strong{rejecting H0} (small p-value) indicates the forecast under- or over-estimates
@@ -64,15 +84,29 @@ tail risk.
 }
 \examples{
 data(metals)
-benchmark_col      <- 15
-K_total            <- ncol(metals)
-comp_cols          <- setdiff(seq_len(K_total), benchmark_col)
-realized           <- metals[, benchmark_col]
-forecast_variance  <- estimate_forecast_variance(metals, realized = realized,
-                        benchmark_col = benchmark_col, window_size = 20)
+
+# 'metals' contains 14 forecast-model columns (including the benchmark)
+# plus a separate realized-outcome column, HA. The realized series MUST be
+# extracted separately and MUST NOT be passed as part of forecast_matrix.
+forecast_model_cols <- seq_len(14)
+benchmark_col        <- match("AR_1", colnames(metals)[forecast_model_cols])
+realized_col         <- match("HA", colnames(metals))
+
+forecast_matrix <- metals[, forecast_model_cols]
+realized        <- metals[, realized_col]
+
+comp_cols <- setdiff(seq_len(ncol(forecast_matrix)), benchmark_col)
+
+forecast_variance <- estimate_forecast_variance(
+  forecast_matrix, realized = realized,
+  benchmark_col = benchmark_col, window_size = 20
+)
 forecast_sd_models <- sqrt(forecast_variance[, comp_cols])
-coverage_results   <- compute_kupiec(metals, forecast_sd_models,
-                        benchmark_col = benchmark_col, alpha = 0.05)
+
+coverage_results <- compute_kupiec(
+  forecast_matrix, forecast_sd_models, realized = realized,
+  benchmark_col = benchmark_col, alpha = 0.05
+)
 print(coverage_results[[1]])
 }
 \references{
