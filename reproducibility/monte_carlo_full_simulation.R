@@ -1,19 +1,13 @@
-# =============================================================================
-# monte_carlo_full_simulation.R
 #
-# Monte Carlo size and power assessment for RCtest routines.
+# Monte Carlo size and power assessment for RCtest forecast-evaluation routines.
 #
-# Joint tests:
-#   WRC, SPA, CPA, KLIC, ZP, CDF-RC
-# report the fraction of Monte Carlo replications rejecting at alpha.
+# Point-forecast procedures use simulated AR(1) loss-difference series.
+# KLIC and CRPS/CDF-RC use a comparative Gaussian density-forecast DGP.
+# ZP uses a separate tail-probability DGP.
+# Kupiec uses a separate variance-miscalibration DGP.
 #
-# Per-model tests:
-#   DM_mean_rejection_rate and Kupiec_mean_rejection_rate report the average
-#   fraction of individual model tests rejecting across MC replications.
-# They are not family-wise "any rejection" probabilities.
-#
-# The loss-differential DGP has null and alternative cases. The Kupiec DGP
-# separately has calibrated and deliberately miscalibrated VaR scenarios.
+# For all joint procedures, a positive loss differential means that a
+# competitor has lower loss than the benchmark.
 # =============================================================================
 
 library(RCtest)
@@ -27,10 +21,7 @@ n_mc <- 500L
 n_boot <- 499L
 alpha <- 0.05
 K_models <- 5L
-
-# -----------------------------------------------------------------------------
-# Generic AR(1) loss-differential DGP
-# -----------------------------------------------------------------------------
+n_crps_samples <- 500L
 
 simulate_loss_differentials <- function(
     P,
@@ -46,126 +37,350 @@ simulate_loss_differentials <- function(
   
   if (correlated) {
     rho <- 0.5
-    sigma_matrix <- matrix(rho, nrow = K, ncol = K)
-    diag(sigma_matrix) <- 1
-    cholesky_factor <- chol(sigma_matrix)
+    Sigma <- matrix(rho, nrow = K, ncol = K)
+    diag(Sigma) <- 1
+    L <- chol(Sigma)
   } else {
-    cholesky_factor <- diag(K)
+    L <- diag(K)
   }
   
-  shocks <- matrix(
-    rnorm(P * K),
-    nrow = P,
-    ncol = K
-  ) %*% cholesky_factor
+  shocks <- matrix(rnorm(P * K), nrow = P, ncol = K) %*% L
   
   if (heteroskedastic) {
-    innovation_scale <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
-    shocks <- shocks * innovation_scale
+    scale_t <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
+    shocks <- shocks * scale_t
   }
   
-  loss_differences <- matrix(0, nrow = P, ncol = K)
+  loss_diff <- matrix(0, nrow = P, ncol = K)
+  loss_diff[1L, ] <- shocks[1L, ]
   
-  for (model_index in seq_len(K)) {
-    innovation <- shocks[, model_index]
-    series <- numeric(P)
-    series[1] <- innovation[1]
-    
-    for (time_index in 2:P) {
-      series[time_index] <- (
-        phi * series[time_index - 1] +
-          innovation[time_index]
-      )
+  if (P > 1L) {
+    for (t in 2:P) {
+      loss_diff[t, ] <- phi * loss_diff[t - 1L, ] + shocks[t, ]
     }
-    
-    loss_differences[, model_index] <- (
-      series + alternative_means[model_index]
-    )
   }
   
-  colnames(loss_differences) <- paste0("M", seq_len(K))
-  
-  loss_differences
+  loss_diff <- sweep(loss_diff, 2, alternative_means, FUN = "+")
+  colnames(loss_diff) <- paste0("M", seq_len(K))
+  loss_diff
 }
 
-# -----------------------------------------------------------------------------
-# VaR / Kupiec DGP
-#
-# Under kupiec_miscalibration = 1 and heteroskedastic = FALSE, the supplied
-# forecast SD equals the AR(1) error process's unconditional SD. Therefore,
-# each model has correctly calibrated Gaussian one-step VaR under the null.
-#
-# Under kupiec_miscalibration < 1, forecast SD is deliberately too small:
-# VaR bands are too narrow and exceedances occur too often. This is a
-# controlled alternative-power configuration for the Kupiec UC test.
-# -----------------------------------------------------------------------------
-
-simulate_forecast_levels_for_kupiec <- function(
+simulate_comparative_density_dgp <- function(
     P,
     phi,
     correlated,
     heteroskedastic,
-    kupiec_miscalibration = 1,
+    density_advantage,
+    competitor_sd_multiplier = 1,
+    benchmark_bias = 0,
+    benchmark_sd_multiplier = 1,
     K = K_models
 ) {
-  if (kupiec_miscalibration <= 0) {
-    stop("kupiec_miscalibration must be positive.")
+  if (length(density_advantage) != K) {
+    stop("density_advantage must have length K.")
   }
   
-  realized <- cumsum(rnorm(P, sd = 1))
-  
-  forecast_errors <- simulate_loss_differentials(
-    P = P,
-    phi = phi,
-    correlated = correlated,
-    heteroskedastic = heteroskedastic,
-    alternative_means = rep(0, K + 1L),
-    K = K + 1L
-  )
-  
-  forecast_matrix <- matrix(
-    realized,
-    nrow = P,
-    ncol = K + 1L
-  ) + forecast_errors
-  
-  colnames(forecast_matrix) <- c(
-    paste0("M", seq_len(K)),
-    "Benchmark"
-  )
-  
-  benchmark_col <- K + 1L
-  
-  # For homoskedastic innovations with variance 1, the stationary AR(1)
-  # forecast-error SD is sqrt(1 / (1 - phi^2)).
-  unconditional_error_sd <- sqrt(1 / (1 - phi^2))
+  if (competitor_sd_multiplier <= 0 || benchmark_sd_multiplier <= 0) {
+    stop("Standard-deviation multipliers must be positive.")
+  }
   
   if (heteroskedastic) {
-    innovation_scale <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
-    
-    sd_path <- unconditional_error_sd * innovation_scale
+    scale_t <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
   } else {
-    sd_path <- rep(unconditional_error_sd, P)
+    scale_t <- rep(1, P)
   }
   
-  forecast_sd_models <- matrix(
-    rep(sd_path * kupiec_miscalibration, K),
+  innovations <- rnorm(P) * scale_t
+  actual <- numeric(P)
+  actual[1L] <- innovations[1L]
+  
+  if (P > 1L) {
+    for (t in 2:P) {
+      actual[t] <- phi * actual[t - 1L] + innovations[t]
+    }
+  }
+  
+  unconditional_sd <- sqrt(1 / (1 - phi^2))
+  baseline_sd <- unconditional_sd * scale_t
+  
+  if (correlated) {
+    rho <- 0.5
+    Sigma <- matrix(rho, nrow = K + 1L, ncol = K + 1L)
+    diag(Sigma) <- 1
+    L <- chol(Sigma)
+  } else {
+    L <- diag(K + 1L)
+  }
+  
+  forecast_shocks <- matrix(
+    rnorm(P * (K + 1L)),
+    nrow = P,
+    ncol = K + 1L
+  ) %*% L
+  
+  forecast_shocks <- forecast_shocks * scale_t
+  
+  forecast_errors <- matrix(0, nrow = P, ncol = K + 1L)
+  forecast_errors[1L, ] <- forecast_shocks[1L, ]
+  
+  if (P > 1L) {
+    for (t in 2:P) {
+      forecast_errors[t, ] <- phi * forecast_errors[t - 1L, ] +
+        forecast_shocks[t, ]
+    }
+  }
+  
+  benchmark_mean <- actual + forecast_errors[, K + 1L] + benchmark_bias
+  
+  competitor_means <- forecast_errors[, seq_len(K), drop = FALSE]
+  competitor_means <- sweep(competitor_means, 1, actual, FUN = "+")
+  competitor_means <- sweep(competitor_means, 2, density_advantage, FUN = "-")
+  colnames(competitor_means) <- paste0("M", seq_len(K))
+  
+  benchmark_sd <- baseline_sd * benchmark_sd_multiplier
+  
+  competitor_sds <- matrix(
+    rep(baseline_sd * competitor_sd_multiplier, K),
     nrow = P,
     ncol = K,
-    dimnames = list(NULL, paste0("M", seq_len(K)))
+    dimnames = list(NULL, colnames(competitor_means))
   )
   
   list(
-    forecast_matrix = forecast_matrix,
-    forecast_sd_models = forecast_sd_models,
-    realized = realized,
-    benchmark_col = benchmark_col
+    actual = actual,
+    competitor_means = competitor_means,
+    competitor_sds = competitor_sds,
+    benchmark_mean = benchmark_mean,
+    benchmark_sd = benchmark_sd
   )
 }
 
-# -----------------------------------------------------------------------------
-# Test battery
-# -----------------------------------------------------------------------------
+compute_klic_comparative <- function(
+    actual,
+    competitor_means,
+    competitor_sds,
+    benchmark_mean,
+    benchmark_sd
+) {
+  P <- length(actual)
+  K <- ncol(competitor_means)
+  
+  if (nrow(competitor_means) != P ||
+      nrow(competitor_sds) != P ||
+      ncol(competitor_sds) != K ||
+      length(benchmark_mean) != P ||
+      length(benchmark_sd) != P) {
+    stop("Incompatible dimensions in comparative KLIC inputs.")
+  }
+  
+  benchmark_nls <- -dnorm(
+    actual,
+    mean = benchmark_mean,
+    sd = benchmark_sd,
+    log = TRUE
+  )
+  
+  competitor_nls <- matrix(
+    NA_real_,
+    nrow = P,
+    ncol = K,
+    dimnames = list(NULL, colnames(competitor_means))
+  )
+  
+  for (k in seq_len(K)) {
+    competitor_nls[, k] <- -dnorm(
+      actual,
+      mean = competitor_means[, k],
+      sd = competitor_sds[, k],
+      log = TRUE
+    )
+  }
+  
+  sweep(
+    competitor_nls,
+    1,
+    benchmark_nls,
+    FUN = function(model_loss, benchmark_loss) benchmark_loss - model_loss
+  )
+}
+
+compute_zp_comparative <- function(
+    actual,
+    threshold,
+    competitor_means,
+    competitor_sds,
+    benchmark_mean,
+    benchmark_sd
+) {
+  P <- length(actual)
+  K <- ncol(competitor_means)
+  
+  if (length(threshold) == 1L) {
+    threshold <- rep(threshold, P)
+  }
+  
+  if (length(threshold) != P ||
+      nrow(competitor_means) != P ||
+      nrow(competitor_sds) != P ||
+      ncol(competitor_sds) != K ||
+      length(benchmark_mean) != P ||
+      length(benchmark_sd) != P) {
+    stop("Incompatible dimensions in comparative ZP inputs.")
+  }
+  
+  event <- as.numeric(actual <= threshold)
+  
+  benchmark_probability <- pnorm(
+    threshold,
+    mean = benchmark_mean,
+    sd = benchmark_sd
+  )
+  
+  benchmark_loss <- (event - benchmark_probability)^2
+  
+  competitor_loss <- matrix(
+    NA_real_,
+    nrow = P,
+    ncol = K,
+    dimnames = list(NULL, colnames(competitor_means))
+  )
+  
+  for (k in seq_len(K)) {
+    competitor_probability <- pnorm(
+      threshold,
+      mean = competitor_means[, k],
+      sd = competitor_sds[, k]
+    )
+    
+    competitor_loss[, k] <- (event - competitor_probability)^2
+  }
+  
+  sweep(
+    competitor_loss,
+    1,
+    benchmark_loss,
+    FUN = function(model_loss, benchmark_loss) benchmark_loss - model_loss
+  )
+}
+
+compute_crps_loss_differences <- function(
+    competitor_means,
+    competitor_sds,
+    benchmark_mean,
+    benchmark_sd,
+    actual,
+    n_samples
+) {
+  P <- length(actual)
+  K <- ncol(competitor_means)
+  
+  competitor_crps <- matrix(
+    NA_real_,
+    nrow = P,
+    ncol = K,
+    dimnames = list(NULL, colnames(competitor_means))
+  )
+  
+  benchmark_crps <- numeric(P)
+  
+  for (t in seq_len(P)) {
+    benchmark_samples <- rnorm(
+      n_samples,
+      mean = benchmark_mean[t],
+      sd = benchmark_sd[t]
+    )
+    
+    benchmark_crps[t] <- compute_crps(benchmark_samples, actual[t])
+    
+    for (k in seq_len(K)) {
+      model_samples <- rnorm(
+        n_samples,
+        mean = competitor_means[t, k],
+        sd = competitor_sds[t, k]
+      )
+      
+      competitor_crps[t, k] <- compute_crps(model_samples, actual[t])
+    }
+  }
+  
+  sweep(
+    competitor_crps,
+    1,
+    benchmark_crps,
+    FUN = function(model_score, benchmark_score) benchmark_score - model_score
+  )
+}
+
+simulate_zp_tail_dgp <- function(
+    P,
+    phi,
+    correlated,
+    heteroskedastic,
+    alternative,
+    K = K_models
+) {
+  if (heteroskedastic) {
+    scale_t <- 1 + 0.7 * sin(seq_len(P) / (P / 4))
+  } else {
+    scale_t <- rep(1, P)
+  }
+  
+  innovations <- rnorm(P) * scale_t
+  actual <- numeric(P)
+  actual[1L] <- innovations[1L]
+  
+  if (P > 1L) {
+    for (t in 2:P) {
+      actual[t] <- phi * actual[t - 1L] + innovations[t]
+    }
+  }
+  
+  unconditional_sd <- sqrt(1 / (1 - phi^2))
+  threshold <- qnorm(alpha) * unconditional_sd
+  
+  if (correlated) {
+    rho <- 0.5
+    Sigma <- matrix(rho, nrow = K + 1L, ncol = K + 1L)
+    diag(Sigma) <- 1
+    L <- chol(Sigma)
+  } else {
+    L <- diag(K + 1L)
+  }
+  
+  forecast_noise <- matrix(
+    rnorm(P * (K + 1L)),
+    nrow = P,
+    ncol = K + 1L
+  ) %*% L
+  
+  forecast_noise <- 0.10 * forecast_noise
+  
+  competitor_means <- forecast_noise[, seq_len(K), drop = FALSE]
+  colnames(competitor_means) <- paste0("M", seq_len(K))
+  benchmark_mean <- forecast_noise[, K + 1L]
+  
+  competitor_sds <- matrix(
+    unconditional_sd,
+    nrow = P,
+    ncol = K,
+    dimnames = list(NULL, colnames(competitor_means))
+  )
+  
+  benchmark_sd <- rep(unconditional_sd, P)
+  
+  if (alternative) {
+    benchmark_sd <- rep(0.45 * unconditional_sd, P)
+  }
+  
+  list(
+    actual = actual,
+    threshold = threshold,
+    competitor_means = competitor_means,
+    competitor_sds = competitor_sds,
+    benchmark_mean = benchmark_mean,
+    benchmark_sd = benchmark_sd
+  )
+}
 
 run_full_battery <- function(
     loss_diff,
@@ -175,6 +390,7 @@ run_full_battery <- function(
     heteroskedastic,
     block_length,
     n_boot,
+    alternative_means,
     kupiec_miscalibration
 ) {
   K <- ncol(loss_diff)
@@ -197,12 +413,10 @@ run_full_battery <- function(
       block_length = block_length,
       alpha = alpha
     ),
-    error = function(error) NULL
+    error = function(e) NULL
   )
   
-  if (!is.null(wrc)) {
-    results$WRC <- wrc$p.value
-  }
+  if (!is.null(wrc)) results$WRC <- wrc$p.value
   
   spa <- tryCatch(
     superior_predictive_ability_test(
@@ -211,12 +425,10 @@ run_full_battery <- function(
       num_bootstrap_replications = n_boot,
       alpha = alpha
     ),
-    error = function(error) NULL
+    error = function(e) NULL
   )
   
-  if (!is.null(spa)) {
-    results$SPA <- spa$p_consistent
-  }
+  if (!is.null(spa)) results$SPA <- spa$p_consistent
   
   conditioning_variable <- abs(rnorm(P))
   
@@ -228,57 +440,10 @@ run_full_battery <- function(
       num_bootstrap_replications = n_boot,
       alpha = alpha
     ),
-    error = function(error) NULL
+    error = function(e) NULL
   )
   
-  if (!is.null(cpa)) {
-    results$CPA <- cpa$p.value
-  }
-  
-  klic_input <- loss_diff / 2 +
-    matrix(rnorm(P * K, sd = 0.1), nrow = P, ncol = K)
-  
-  klic <- tryCatch(
-    kullback_leibler_test(
-      log_likelihood_differences = klic_input,
-      block_length = block_length,
-      num_bootstrap_replications = n_boot,
-      alpha = alpha
-    ),
-    error = function(error) NULL
-  )
-  
-  if (!is.null(klic)) {
-    results$KLIC <- klic$p.value
-  }
-  
-  zp <- tryCatch(
-    reality_check_zp_test(
-      zp_loss_differences = loss_diff,
-      block_length = block_length,
-      num_bootstrap_replications = n_boot,
-      alpha = alpha
-    ),
-    error = function(error) NULL
-  )
-  
-  if (!is.null(zp)) {
-    results$ZP <- zp$p_consistent
-  }
-  
-  cdf_rc <- tryCatch(
-    white_reality_check_cdf_approx(
-      loss_differences = loss_diff,
-      block_length = block_length,
-      num_bootstrap_replications = n_boot,
-      alpha = alpha
-    ),
-    error = function(error) NULL
-  )
-  
-  if (!is.null(cdf_rc)) {
-    results$CDF_RC <- cdf_rc$p.value
-  }
+  if (!is.null(cpa)) results$CPA <- cpa$p.value
   
   dm <- tryCatch(
     compute_per_model_statistics(
@@ -289,40 +454,148 @@ run_full_battery <- function(
       alpha = alpha,
       H1 = "same"
     ),
-    error = function(error) NULL
+    error = function(e) NULL
   )
   
   if (!is.null(dm)) {
-    results$DM_mean_rejection_rate <- mean(
-      dm$Significant,
-      na.rm = TRUE
-    )
+    results$DM_mean_rejection_rate <- mean(dm$Significant, na.rm = TRUE)
   }
   
-  kupiec_simulation <- simulate_forecast_levels_for_kupiec(
+  is_alternative <- any(alternative_means != 0)
+  
+  benchmark_bias <- if (is_alternative) 0.40 else 0
+  benchmark_sd_multiplier <- if (is_alternative) 1.75 else 1
+  
+  density_dgp <- simulate_comparative_density_dgp(
     P = P,
     phi = phi,
     correlated = correlated,
     heteroskedastic = heteroskedastic,
-    kupiec_miscalibration = kupiec_miscalibration,
+    density_advantage = alternative_means,
+    competitor_sd_multiplier = 1,
+    benchmark_bias = benchmark_bias,
+    benchmark_sd_multiplier = benchmark_sd_multiplier,
     K = K
+  )
+  
+  klic_diff <- tryCatch(
+    compute_klic_comparative(
+      actual = density_dgp$actual,
+      competitor_means = density_dgp$competitor_means,
+      competitor_sds = density_dgp$competitor_sds,
+      benchmark_mean = density_dgp$benchmark_mean,
+      benchmark_sd = density_dgp$benchmark_sd
+    ),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(klic_diff)) {
+    klic <- tryCatch(
+      kullback_leibler_test(
+        log_likelihood_differences = klic_diff,
+        block_length = block_length,
+        num_bootstrap_replications = n_boot,
+        alpha = alpha
+      ),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(klic)) results$KLIC <- klic$p.value
+  }
+  
+  zp_dgp <- simulate_zp_tail_dgp(
+    P = P,
+    phi = phi,
+    correlated = correlated,
+    heteroskedastic = heteroskedastic,
+    alternative = is_alternative,
+    K = K
+  )
+  
+  zp_diff <- tryCatch(
+    compute_zp_comparative(
+      actual = zp_dgp$actual,
+      threshold = zp_dgp$threshold,
+      competitor_means = zp_dgp$competitor_means,
+      competitor_sds = zp_dgp$competitor_sds,
+      benchmark_mean = zp_dgp$benchmark_mean,
+      benchmark_sd = zp_dgp$benchmark_sd
+    ),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(zp_diff)) {
+    zp <- tryCatch(
+      reality_check_zp_test(
+        zp_loss_differences = zp_diff,
+        block_length = block_length,
+        num_bootstrap_replications = n_boot,
+        alpha = alpha
+      ),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(zp)) results$ZP <- zp$p_consistent
+  }
+  
+  crps_diff <- tryCatch(
+    compute_crps_loss_differences(
+      competitor_means = density_dgp$competitor_means,
+      competitor_sds = density_dgp$competitor_sds,
+      benchmark_mean = density_dgp$benchmark_mean,
+      benchmark_sd = density_dgp$benchmark_sd,
+      actual = density_dgp$actual,
+      n_samples = n_crps_samples
+    ),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(crps_diff)) {
+    cdf_rc <- tryCatch(
+      white_reality_check_cdf_approx(
+        loss_differences = crps_diff,
+        block_length = block_length,
+        num_bootstrap_replications = n_boot,
+        alpha = alpha
+      ),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(cdf_rc)) results$CDF_RC <- cdf_rc$p.value
+  }
+  
+  kupiec_dgp <- simulate_comparative_density_dgp(
+    P = P,
+    phi = phi,
+    correlated = correlated,
+    heteroskedastic = heteroskedastic,
+    density_advantage = rep(0, K),
+    competitor_sd_multiplier = if (is_alternative) 0.60 else 1,
+    benchmark_bias = 0,
+    benchmark_sd_multiplier = 1,
+    K = K
+  )
+  
+  kupiec_matrix <- cbind(
+    kupiec_dgp$competitor_means,
+    Benchmark = kupiec_dgp$benchmark_mean
   )
   
   kupiec_results <- tryCatch(
     compute_kupiec(
-      forecast_matrix = kupiec_simulation$forecast_matrix,
-      forecast_sd_models = kupiec_simulation$forecast_sd_models,
-      realized = kupiec_simulation$realized,
-      benchmark_col = kupiec_simulation$benchmark_col,
+      forecast_matrix = kupiec_matrix,
+      forecast_sd_models = kupiec_dgp$competitor_sds,
+      realized = kupiec_dgp$actual,
+      benchmark_col = ncol(kupiec_matrix),
       alpha = alpha
     ),
-    error = function(error) NULL
+    error = function(e) NULL
   )
   
   if (!is.null(kupiec_results) && length(kupiec_results) > 0L) {
     kupiec_p_values <- vapply(
       kupiec_results,
-      function(result) result$p.value,
+      function(x) x$p.value,
       numeric(1)
     )
     
@@ -332,12 +605,8 @@ run_full_battery <- function(
     )
   }
   
-  results
+  return(results)
 }
-
-# -----------------------------------------------------------------------------
-# Simulation scenarios
-# -----------------------------------------------------------------------------
 
 null_baseline <- list(
   Scenario = "Null",
@@ -363,28 +632,15 @@ make_config_grid <- function(base_config) {
   configs <- list()
   
   for (P_value in c(100L, 150L, 250L)) {
-    configs[[length(configs) + 1L]] <- modifyList(
-      base_config,
-      list(P = P_value)
-    )
+    configs[[length(configs) + 1L]] <- modifyList(base_config, list(P = P_value))
   }
   
   for (phi_value in c(0.0, 0.6)) {
-    configs[[length(configs) + 1L]] <- modifyList(
-      base_config,
-      list(phi = phi_value)
-    )
+    configs[[length(configs) + 1L]] <- modifyList(base_config, list(phi = phi_value))
   }
   
-  configs[[length(configs) + 1L]] <- modifyList(
-    base_config,
-    list(correlated = FALSE)
-  )
-  
-  configs[[length(configs) + 1L]] <- modifyList(
-    base_config,
-    list(heteroskedastic = TRUE)
-  )
+  configs[[length(configs) + 1L]] <- modifyList(base_config, list(correlated = FALSE))
+  configs[[length(configs) + 1L]] <- modifyList(base_config, list(heteroskedastic = TRUE))
   
   for (block_length_value in c(3L, 8L)) {
     configs[[length(configs) + 1L]] <- modifyList(
@@ -421,18 +677,9 @@ configs <- c(
   make_config_grid(alternative_baseline)
 )
 
-# -----------------------------------------------------------------------------
-# Main loop
-# -----------------------------------------------------------------------------
+results_file <- file.path(output_dir, "monte_carlo_results.csv")
 
-results_file <- file.path(
-  output_dir,
-  "monte_carlo_results.csv"
-)
-
-if (file.exists(results_file)) {
-  file.remove(results_file)
-}
+if (file.exists(results_file)) file.remove(results_file)
 
 test_names <- c(
   "WRC",
@@ -445,41 +692,25 @@ test_names <- c(
   "Kupiec_mean_rejection_rate"
 )
 
-joint_test_names <- c(
-  "WRC",
-  "SPA",
-  "CPA",
-  "KLIC",
-  "ZP",
-  "CDF_RC"
-)
-
-per_model_test_names <- c(
-  "DM_mean_rejection_rate",
-  "Kupiec_mean_rejection_rate"
-)
+joint_test_names <- c("WRC", "SPA", "CPA", "KLIC", "ZP", "CDF_RC")
+per_model_test_names <- c("DM_mean_rejection_rate", "Kupiec_mean_rejection_rate")
 
 for (config_index in seq_along(configs)) {
   config <- configs[[config_index]]
   
-  cat(
-    sprintf(
-      paste0(
-        "\n[%d/%d] Scenario=%s, P=%d, phi=%.1f, correlated=%s, ",
-        "heteroskedastic=%s, block_length=%d, means=(%s), VaR-SD multiplier=%.2f\n"
-      ),
-      config_index,
-      length(configs),
-      config$Scenario,
-      config$P,
-      config$phi,
-      config$correlated,
-      config$heteroskedastic,
-      config$block_length,
-      paste(config$alternative_means, collapse = ", "),
-      config$kupiec_miscalibration
-    )
-  )
+  cat(sprintf(
+    "\n[%d/%d] Scenario=%s, P=%d, phi=%.1f, correlated=%s, heteroskedastic=%s, block_length=%d, means=(%s), Kupiec-SD multiplier=%.2f\n",
+    config_index,
+    length(configs),
+    config$Scenario,
+    config$P,
+    config$phi,
+    config$correlated,
+    config$heteroskedastic,
+    config$block_length,
+    paste(config$alternative_means, collapse = ", "),
+    config$kupiec_miscalibration
+  ))
   
   battery_values <- matrix(
     NA_real_,
@@ -506,6 +737,7 @@ for (config_index in seq_along(configs)) {
       heteroskedastic = config$heteroskedastic,
       block_length = config$block_length,
       n_boot = n_boot,
+      alternative_means = config$alternative_means,
       kupiec_miscalibration = config$kupiec_miscalibration
     )
     
@@ -525,7 +757,7 @@ for (config_index in seq_along(configs)) {
   
   for (test_name in joint_test_names) {
     values <- battery_values[, test_name]
-    valid <- !is.na(values)
+    valid <- is.finite(values)
     n_valid_draws[test_name] <- sum(valid)
     
     if (n_valid_draws[test_name] > 0L) {
@@ -535,7 +767,7 @@ for (config_index in seq_along(configs)) {
   
   for (test_name in per_model_test_names) {
     values <- battery_values[, test_name]
-    valid <- !is.na(values)
+    valid <- is.finite(values)
     n_valid_draws[test_name] <- sum(valid)
     
     if (n_valid_draws[test_name] > 0L) {
@@ -543,9 +775,7 @@ for (config_index in seq_along(configs)) {
     }
   }
   
-  monte_carlo_se <- sqrt(
-    rejection_rate * (1 - rejection_rate) / n_valid_draws
-  )
+  monte_carlo_se <- sqrt(rejection_rate * (1 - rejection_rate) / n_valid_draws)
   
   config_results <- data.frame(
     Scenario = config$Scenario,
@@ -556,6 +786,7 @@ for (config_index in seq_along(configs)) {
     block_length = config$block_length,
     Alternative_Means = paste(config$alternative_means, collapse = ";"),
     Kupiec_SD_Multiplier = config$kupiec_miscalibration,
+    CRPS_Samples = n_crps_samples,
     Test = test_names,
     Rejection_Rate = rejection_rate,
     MC_SE = monte_carlo_se,
@@ -572,23 +803,15 @@ for (config_index in seq_along(configs)) {
     append = file.exists(results_file)
   )
   
-  cat(
-    sprintf(
-      "  Done: %s\n",
-      paste(
-        sprintf(
-          "%s=%.3f(SE=%.3f)",
-          test_names,
-          rejection_rate,
-          monte_carlo_se
-        ),
-        collapse = ", "
-      )
+  cat(sprintf(
+    "  Done: %s\n",
+    paste(
+      sprintf("%s=%.3f(SE=%.3f)", test_names, rejection_rate, monte_carlo_se),
+      collapse = ", "
     )
-  )
+  ))
 }
 
 cat("\n==== Complete. Results saved to ====\n")
 cat(normalizePath(results_file), "\n")
-
 print(read.csv(results_file), row.names = FALSE)
